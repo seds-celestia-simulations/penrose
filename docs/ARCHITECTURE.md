@@ -177,7 +177,9 @@ The renderer never cares which integrator, spacetime, or step count produced a c
 | `GpuPolylineBackend` | `visualization_gpu` (viewer only) | `visualization_viewer` | OpenGL draw into GLFW framebuffer |
 | `CpuRasterizerBackend` | `visualization` | `visualization_export` | `Framebuffer` → PPM (no OpenGL) |
 
-GPU trajectory shaders and buffers live under `visualization/Renderer/Gpu/` (embedded sources). They are not shared with `realtime/`. Interactive viewer v1 draws starfield, opaque horizon disc (+ optional glow / photon-sphere visuals via scene flags), solid trails with distance fall-off, and markers. CPU export retains optional `PostProcessor` bloom / cosmetic lensing; GPU bloom parity is deferred.
+GPU trajectory shaders and buffers live under `visualization/Renderer/Gpu/` (embedded sources). They are not shared with `realtime/`. Interactive viewer v1 draws starfield, an opaque filled horizon disc, a soft warm ash glow (~22% peak), and an optional decorative photon-sphere ring (~35% peak) via a **two-pass** GPU draw (opaque disc with depth write, then FX with depth test off), plus solid trails and markers. CPU export paints the same disc/glow/ring in `CPURasterizer`. Cosmetic `PostProcessor` bloom / lensing remains on the CPU export path; GPU bloom parity is deferred.
+
+`run/viewer/main.cpp` and `run/export/main.cpp` default to Kerr bound orbits with commented Schwarzschild blocks for easy swap (same pattern as `run/benchmark/main.cpp`).
 
 `auto_frame` distances the camera from scene extent and uses a tilted yaw/pitch (not edge-on to equatorial orbits). Playback scrub in the viewer advances at a time-based rate (~8% of duration per second while Left/Right are held).
 
@@ -271,7 +273,7 @@ penrose/
 
 ---
 
-## 9. Extensibility sketch (next metrics)
+## 9. Extensibility (metrics)
 
 Kerr is already wired as a first-class CPU swap next to Schwarzschild:
 

@@ -16,7 +16,7 @@ For the current architecture, see [`../ARCHITECTURE.md`](../ARCHITECTURE.md). Ag
 
 | Document | Topic | Notes |
 |----------|--------|-------|
-| [`shared_architecture_review.md`](shared_architecture_review.md) | Feasibility of shared GR abstractions vs dual pipelines | Dated; predates `run/` entry points, dual Stage 3 backends, and Kerr scaffolding / realtime Kerr default |
+| [`shared_architecture_review.md`](shared_architecture_review.md) | Feasibility of shared GR abstractions vs dual pipelines | Dated; predates `run/` entry points, dual Stage 3 backends, CPU Kerr production path, and realtime Kerr default |
 | [`legacy_architecture_review.md`](legacy_architecture_review.md) | Pre-refactor layout review | Dated; describes earlier `src/`-style organization |
 | [`realtime_architecture_review.md`](realtime_architecture_review.md) | Realtime backend vs framework architecture | Still useful on ownership boundaries; metric section predates Kerr-as-default shader path |
 | [`realtime_roadmap.md`](realtime_roadmap.md) | Realtime evolution toward shared contracts | Directional; “add Kerr before fixing identity” risk is partially realized (Kerr via GLSL includes without shared `MetricType`) |

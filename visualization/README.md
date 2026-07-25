@@ -30,10 +30,13 @@ OpenGL code is confined to `visualization/Renderer/Gpu/` and the `visualization_
 ### GPU viewer scope (v1)
 
 - Background clear + starfield (`visualization/resources/`) with mild rim warp
-- Opaque event-horizon disc (billboard; scene flags control related visuals)
+- Opaque filled event-horizon disc (billboard)
+- Soft warm glow outside the disc + optional decorative photon-sphere ring (`show_photon_sphere`; two-pass GPU depth handling)
 - Solid trajectory ribbons with along-path and distance fall-off
 - Current-position markers and playback highlight
 - Deferred: GPU bloom / cosmetic lensing matching CPU `PostProcessor`
+
+`run/viewer` and `run/export` default to Kerr orbits; Schwarzschild blocks are commented for easy swap.
 
 ## User-facing workflows
 

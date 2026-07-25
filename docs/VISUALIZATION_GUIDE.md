@@ -43,11 +43,18 @@ Stage 3 rendering
 ```cpp
 // Layer 1+2 — one SimulationRequest per independent particle
 Simulation::SimulationRequest orbit;
-orbit.config.spacetime = Simulation::SpacetimeKind::Schwarzschild;
 orbit.config.scenario  = Simulation::Scenario::BoundOrbit;
 orbit.config.dt = 0.01;          // physics resolution
-orbit.metric = Spacetime::SchwarzschildParameters{.mass = 1.0};
-orbit.initial = Simulation::BoundOrbitInitialConditions{ .r0 = 6.0, .vphi = 0.06 };
+
+// Kerr (default in run/viewer and run/export):
+orbit.config.spacetime = Simulation::SpacetimeKind::Kerr;
+orbit.metric = Spacetime::KerrParameters{.mass = 1.0, .spin = 0.35};
+orbit.initial = Simulation::BoundOrbitInitialConditions{ .r0 = 6.0, .vphi = 0.055 };
+
+// Schwarzschild (commented alternative in run/*/main.cpp):
+// orbit.config.spacetime = Simulation::SpacetimeKind::Schwarzschild;
+// orbit.metric = Spacetime::SchwarzschildParameters{.mass = 1.0};
+// orbit.initial = Simulation::BoundOrbitInitialConditions{ .r0 = 6.0, .vphi = 0.06 };
 
 std::vector<Simulation::SimulationRequest> simulations = {orbit};
 auto trajectories = Simulation::run_all(simulations);
@@ -108,9 +115,9 @@ cmake --build build --target visualization_viewer
 ./build/visualization_viewer
 ```
 
-The viewer renders prepared trajectories with `GpuPolylineBackend` (`visualization_gpu` static library): starfield, opaque horizon disc + glow ring, solid trails with distance fall-off, and markers. It does **not** run the CPU rasterizer each frame. Headless export uses `CpuRasterizerBackend` instead — see §3.
+The viewer renders prepared trajectories with `GpuPolylineBackend` (`visualization_gpu` static library): starfield, opaque filled horizon disc, soft warm glow, optional decorative photon-sphere ring (two-pass GPU draw so FX stay visible), solid trails with distance fall-off, and markers. It does **not** run the CPU rasterizer each frame. Headless export uses `CpuRasterizerBackend` with matching disc/glow/ring painting — see §3.
 
-`run/viewer/main.cpp` currently demonstrates a **single unstable circular null geodesic** (photon-sphere orbit) in Schwarzschild spacetime. Add more particles by pushing additional `SimulationRequest` entries into the `simulations` vector.
+`run/viewer/main.cpp` defaults to a **Kerr bound orbit** (`mass=1.0`, `spin=0.35`) with a commented Schwarzschild block for easy swap. Add more particles by pushing additional `SimulationRequest` entries into the `simulations` vector.
 
 | Input | Action |
 |-------|--------|
@@ -134,7 +141,7 @@ cmake --build build --target visualization_export
 ./build/visualization_export
 ```
 
-Uses `CpuRasterizerBackend` (`CPURasterizer` + optional `PostProcessor`) — no OpenGL or display required.
+Uses `CpuRasterizerBackend` (`CPURasterizer` + optional `PostProcessor`) — no OpenGL or display required. Paints the same horizon disc / soft glow / optional photon-sphere ring as the GPU viewer. Defaults to the same Kerr bound orbit as `run/viewer` (Schwarzschild block commented for swap).
 
 `frame_count = 1` → still; `>1` → `frame_XXXXXX.ppm` under `outputs/rendered_frames/<timestamp>/`.
 

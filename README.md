@@ -52,8 +52,9 @@ The simulation engine separates spacetime geometry, equations of motion, numeric
 
 A modular visualization pipeline decoupled from the physics engine.
 
-* Interactive GPU trajectory viewer
-* Headless CPU rasterization and image export
+* Interactive GPU trajectory viewer (Kerr bound orbit by default in `run/viewer`)
+* Headless CPU rasterization and image export (same Kerr default in `run/export`)
+* Opaque horizon disc, soft glow, and optional photon-sphere ring (GPU two-pass / matching CPU paint)
 * Multiple simultaneous trajectories
 * Resolution-independent rendering pipeline
 * Animation sequence generation
@@ -157,9 +158,9 @@ Trajectory visualization uses **config-driven executables**. Edit the matching `
 | Goal | Edit | Command |
 |------|------|---------|
 | GPU ray-march renderer (Kerr default) | `realtime/shaders/reduced.comp` to swap metrics | `./build/Penrose` |
-| Physics benchmarks | `run/benchmark/main.cpp` | `./build/physics_benchmark` |
-| Interactive trajectory viewer (GPU) | `run/viewer/main.cpp` | `./build/visualization_viewer` |
-| Export still / sequence (CPU) | `run/export/main.cpp` | `./build/visualization_export` |
+| Physics benchmarks (Kerr default) | `run/benchmark/main.cpp` | `./build/physics_benchmark` |
+| Interactive trajectory viewer (GPU, Kerr default) | `run/viewer/main.cpp` | `./build/visualization_viewer` |
+| Export still / sequence (CPU, Kerr default) | `run/export/main.cpp` | `./build/visualization_export` |
 
 ```bash
 # Example: change initial conditions in run/viewer/main.cpp, then

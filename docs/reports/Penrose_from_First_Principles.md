@@ -4,7 +4,7 @@
 > Mathematical explanations remain useful. Directory, executable, and shader-layout assumptions may be
 > dated relative to the current tree (`run/`, `realtime/core`, compute-shader assembly via
 > `reduced.comp` with Kerr default `kerr_full.glsl`, dual Stage 3 trajectory backends:
-> GPU viewer + CPU export, `physics/analysis/`, CPU Kerr scaffolding not yet pipeline-wired).
+> GPU viewer + CPU export, `physics/analysis/`, CPU Schwarzschild **and** Kerr production paths).
 > For current architecture and workflows, see [`../ARCHITECTURE.md`](../ARCHITECTURE.md),
 > [`../RUNNING.md`](../RUNNING.md), and [`../VISUALIZATION_GUIDE.md`](../VISUALIZATION_GUIDE.md).
 

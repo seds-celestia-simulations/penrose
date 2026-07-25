@@ -18,7 +18,7 @@ Renderer::~Renderer() {
 }
 
 void Renderer::updateParticles(const std::vector<Particle>& particles) {
-    particleBuffer.uploadParticles(particles);
+    // particleBuffer.uploadParticles(particles);
 }
 
 void Renderer::bindParticleBuffer(unsigned int bindingPoint) {

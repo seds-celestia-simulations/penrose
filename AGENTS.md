@@ -46,11 +46,11 @@ shared/                  # Cross-module GR definitions (header-only)
   units/                 # Placeholder for unit system
 
 physics/                 # CPU scientific pipeline
-  metrics/               # SchwarzschildMetric (wired), KerrMetric (scaffolding)
+  metrics/               # SchwarzschildMetric, KerrMetric (both production)
   geodesics/             # GeodesicDynamics (implements DynamicsModel)
   integrators/           # RK4Integrator
-  simulation/            # TrajectorySolver, SimulationPipeline, IC builders
-  validation/            # Benchmarks + observables
+  simulation/            # TrajectorySolver, SimulationPipeline, Sch + Kerr IC builders
+  validation/            # Benchmarks + observables (Sch + Kerr)
   analysis/              # Python CSV analysis / figures / reports
 
 realtime/                # GPU real-time engine
@@ -97,6 +97,7 @@ penrose_shared (header-only)
 - Pipelines are peers. Never create cross-module links between them.
 - `realtime/` owns its own metric GLSL — it does **not** use `physics/*Metric`.
 - Entry points configure in `run/*/main.cpp`; they should not construct concrete `*Metric` types.
+- `run/benchmark`, `run/viewer`, and `run/export` default to Kerr with commented Schwarzschild blocks for easy swap.
 
 ## Metric status (important)
 

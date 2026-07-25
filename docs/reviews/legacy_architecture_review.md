@@ -2,7 +2,8 @@
 
 > **Historical / non-normative.** Pre-refactor review describing an earlier `src/`-style layout.
 > It is not the source of truth for the current repository (`run/`, `penrose_physics`,
-> dual Stage 3 trajectory backends, separate `realtime/` ray march).
+> dual Stage 3 trajectory backends, separate `realtime/` compute ray march with Kerr default,
+> CPU Schwarzschild **and** Kerr production paths).
 > Current reference: [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
 
 ## 1. Executive Summary

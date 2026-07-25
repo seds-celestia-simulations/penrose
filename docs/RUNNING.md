@@ -10,7 +10,7 @@ This guide covers how to install dependencies and run each Penrose pipeline:
 | Pipeline | Location | Executable / tool |
 |---|---|---|
 | GPU real-time ray march (Kerr default) | `realtime/` | `Penrose` |
-| CPU scientific (Schwarzschild production) | `physics/` + `run/benchmark/` | `physics_benchmark` |
+| CPU scientific (Schwarzschild + Kerr) | `physics/` + `run/benchmark/` | `physics_benchmark` |
 | Trajectory visualization | `visualization/` + `run/viewer|export/` | `visualization_viewer` (GPU), `visualization_export` (CPU) |
 
 Architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md) · Trajectory viz UX: [`VISUALIZATION_GUIDE.md`](VISUALIZATION_GUIDE.md).
@@ -227,7 +227,7 @@ ffmpeg -framerate 30 -pattern_type glob \
 
 Configure the suite in [`run/benchmark/main.cpp`](../run/benchmark/main.cpp). The CMake target `physics_benchmark` runs freefall, orbital, and null-geodesic validation drivers from `physics/validation/` via `BenchmarkRunner`.
 
-Today the production path supports **Schwarzschild** and **Kerr**. Select in [`run/benchmark/main.cpp`](../run/benchmark/main.cpp) via `config.spacetime` + `config.metric` (`SchwarzschildParameters` or `KerrParameters`). Kerr writes `freefall_kerr.csv`, `orbital_kerr.csv`, `null_kerr_b_*.csv`.
+Today both **Schwarzschild** and **Kerr** are supported. [`run/benchmark/main.cpp`](../run/benchmark/main.cpp) defaults to Kerr (`spin = 0.35`) with a commented Schwarzschild block for easy swap via `config.spacetime` + `config.metric`. Kerr writes `freefall_kerr.csv`, `orbital_kerr.csv`, `null_kerr_b_*.csv`; Schwarzschild writes `freefall.csv`, `orbital.csv`, `null_b_*.csv`.
 
 ### Build
 
@@ -320,7 +320,7 @@ Export stills / sequences: `outputs/rendered_frames/<timestamp>/`.
 | Build GPU ray-march visualizer | `cmake --build build` (Windows: add `--config Debug`) |
 | Run GPU ray-march visualizer (Kerr default) | `./build/Penrose` or `build\Debug\Penrose.exe` |
 | Build CPU benchmarks | `cmake --build build --target physics_benchmark` |
-| Run CPU benchmarks (Schwarzschild) | `./build/physics_benchmark` or `build\Debug\physics_benchmark.exe` |
+| Run CPU benchmarks (Kerr default) | `./build/physics_benchmark` or `build\Debug\physics_benchmark.exe` |
 | Build trajectory viewer / export | `cmake --build build --target visualization_viewer visualization_export` |
 | Run trajectory viewer (GPU) | `./build/visualization_viewer` |
 | Run trajectory export (CPU) | `./build/visualization_export` |
