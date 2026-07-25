@@ -17,3 +17,5 @@ outputs/rendered_frames/**/*
 
 .vscode/
 .venv/
+
+__pycache__/
