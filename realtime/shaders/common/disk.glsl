@@ -1,7 +1,12 @@
+#include "noise.glsl"
+
 const float DISK_INNER = 0.75;
 const float DISK_OUTER = 5.0;
 const float DISK_HEIGHT_INNER = 0.5;
 const float DISK_HEIGHT_OUTER = 2.0;
+
+const float DENSITY_SCALE = 1.0;
+const float DOPPLER_STRENGTH = 4.0;
 
 vec3 blackbodyColor(float T) {
     vec3 cool = vec3(0.3, 0.01, 0.0);
@@ -48,7 +53,7 @@ bool accumulateVolume(vec3 currentPos, vec3 previousPos, float uTime,
         float edgeFade = smoothstep(0.0, 0.15, radial01) * (1.0 - smoothstep(0.6, 1.0, radial01));
         float verticalFade = exp(-2.0 * zDist * zDist / (localHeight * localHeight));
 
-        float density = smoothstep(0.2, 0.8, noiseVal) * edgeFade * verticalFade;
+        float density = smoothstep(0.2, 0.8, noiseVal) * edgeFade * verticalFade * DENSITY_SCALE;
 
         if (density > 0.0) {
             vec3 plasmaVel = normalize(vec3(currentPos.y, -currentPos.x, 0.0));
@@ -60,7 +65,7 @@ bool accumulateVolume(vec3 currentPos, vec3 previousPos, float uTime,
             float beta = sqrt(rs / (2.0 * diskR));
             float gamma_lorentz = 1.0 / sqrt(max(1.0 - beta * beta, 1e-6));
             float dopplerFactor = 1.0 / (gamma_lorentz * (1.0 - beta * beaming));
-            dopplerFactor = clamp(dopplerFactor, 0.3, 3.0);
+            dopplerFactor = clamp(mix(1.0, dopplerFactor, DOPPLER_STRENGTH), 0.3, 3.0);
 
             float stepSize = length(currentPos - previousPos);
             float tempNormalized = pow(DISK_INNER / max(diskR, 1e-6), 0.75);
