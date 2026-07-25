@@ -10,6 +10,7 @@ struct PassContext {
     int renderWidth, renderHeight;
     unsigned int skyboxTexture;
     unsigned int geodesicLUT;
+    unsigned int noise3DTexture;
     Shader* screenShader;
 };
 

@@ -80,6 +80,26 @@ add_custom_command(TARGET Penrose POST_BUILD
     "$<TARGET_FILE_DIR:Penrose>/resources"
 )
 
+# 6.5 (?) LUT 
+add_executable(PenroseBaker realtime/spacetime/LutBakerCLI.cpp realtime/spacetime/LutBaker.cpp)
+target_link_libraries(PenroseBaker PRIVATE glm::glm Eigen3::Eigen penrose_shared)
+
+# 2. Define the isolated build asset folder
+set(ASSET_BUILD_DIR "${CMAKE_BINARY_DIR}/assets")
+file(MAKE_DIRECTORY ${ASSET_BUILD_DIR}) # 
+set(LUT_OUTPUT_FILE "${ASSET_BUILD_DIR}/schwarzschild_lut.bin")
+set(NOISE_OUTPUT_FILE "${ASSET_BUILD_DIR}/noise3d.bin")
+
+add_custom_command(
+    OUTPUT "${LUT_OUTPUT_FILE}" "${NOISE_OUTPUT_FILE}"
+    COMMAND $<TARGET_FILE:PenroseBaker> "${LUT_OUTPUT_FILE}" "${NOISE_OUTPUT_FILE}"
+    DEPENDS PenroseBaker 
+    COMMENT "Pre-computing physics assets to build/assets/..."
+)
+
+add_custom_target(BakePhysicsAssets ALL DEPENDS "${LUT_OUTPUT_FILE}" "${NOISE_OUTPUT_FILE}")
+add_dependencies(Penrose BakePhysicsAssets)
+
 # 7. CPU scientific framework library
 set(PHYSICS_ENGINE_SOURCES
     physics/metrics/CoordinateChart.cpp

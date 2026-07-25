@@ -82,43 +82,79 @@ void Engine::initWindow(const std::string& title) {
 }
 
 void Engine::initAssets() {
-    std::cout << "Baking LUT... This might take a second.\n";
-    Physics::BakerConfig config;
-    config.rs = rs;
-    config.rMin = rs * 1.001f;
-    std::vector<float> lutData = Physics::LutBaker::bakeSchwarzschildLUT(config);
-    std::cout << "LUT Bake Complete!\n";
+    std::cout << "Loading baked LUT from build directory...\n";
+    
+    // Read the pre-baked binary asset (adjust path if your VS Code runs from a different working directory)
+    std::ifstream file("build/assets/schwarzschild_lut.bin", std::ios::binary | std::ios::ate);
+    
+    if (!file.is_open()) {
+        std::cerr << "FATAL: Could not find LUT asset! Check your working directory.\n";
+        exit(-1);
+    }
+
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    
+    std::vector<float> lutData(size / sizeof(float));
+    file.read(reinterpret_cast<char*>(lutData.data()), size);
+    file.close();
+
+    std::cout << "Successfully loaded pre-baked LUT!\n";
 
     int rw = static_cast<int>(width * renderScale);
     int rh = static_cast<int>(height * renderScale);
 
+    Physics::BakerConfig config; // Just for the lutSize dimensions
+    
     glGenTextures(1, &geodesicLUT);
     glBindTexture(GL_TEXTURE_2D, geodesicLUT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, config.lutSize, config.lutSize, 0, GL_RGB, GL_FLOAT, lutData.data());
-    lutData.clear();
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, config.lutSize, config.lutSize, 0, GL_RGB, GL_FLOAT, lutData.data()); 
+    skyboxTexture = loadTexture("realtime/resources/starfield_original.jpg");
 
-    skyboxTexture = loadTexture("resources/starfield_original.jpg");
+    std::ifstream fileN("build/assets/noise3d.bin", std::ios::binary | std::ios::ate);
+    std::streamsize sizeN = fileN.tellg();
+    fileN.seekg(0, std::ios::beg);
+    std::vector<float> noiseData(sizeN / sizeof(float));
+    fileN.read(reinterpret_cast<char*>(noiseData.data()), sizeN);
+    fileN.close();
+
+    int noiseRes = 128;
+    glGenTextures(1, &noise3DTexture);
+    glBindTexture(GL_TEXTURE_3D, noise3DTexture);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    
+    // Upload the loaded CPU data straight to the GPU texture
+    glTexImage3D(GL_TEXTURE_3D, 0, GL_R32F, noiseRes, noiseRes, noiseRes, 0, GL_RED, GL_FLOAT, noiseData.data());
+
+    std::cout << "Successfully loaded pre-baked 3D Noise!\n";
 
 // 1. Initialize Renderer WITH DIMENSIONS for the compute texture
     renderer = std::make_unique<Renderer>(rw, rh);
     
     // 2. Load the universal screen blit shader
-    screenShader = std::make_unique<Shader>("shaders/common/screen.vert", "shaders/common/screen.frag");
+    screenShader = std::make_unique<Shader>("realtime/shaders/common/screen.vert", "realtime/shaders/common/screen.frag");
 
     shaderManager = std::make_unique<ShaderManager>();
-    shaderManager->setBasePath("shaders");
+    shaderManager->setBasePath("realtime/shaders");
     shaderManager->loadMetricCompute(MetricType::SCHWARZSCHILD_REDUCED, "reduced.comp");
     shaderManager->setMetric(MetricType::SCHWARZSCHILD_REDUCED);
 
-    Shader* activeShader = shaderManager->getActive();
+    auto activeShader = shaderManager->getActive();
     if (activeShader) {
         activeShader->use();
         activeShader->setInt("skybox", 0);
         activeShader->setInt("uGeodesicLUT", 1);
+        
+        activeShader->setFloat("uLutRMin", config.rMin);
+        activeShader->setFloat("uLutRMax", config.rMax);
     }
 
     frameCapture = std::make_unique<FrameCapture>();
@@ -143,7 +179,7 @@ void Engine::update() {
         const auto& particles = ps->getParticles();
         renderPayload.insert(renderPayload.end(), particles.begin(), particles.end());
     }
-    renderer->updateParticles(renderPayload);
+ //   renderer->updateParticles(renderPayload);
 }
 
 void Engine::render() {
@@ -164,6 +200,7 @@ void Engine::render() {
         rw, rh,
         skyboxTexture,
         geodesicLUT,
+        noise3DTexture,
         screenShader.get()
     };
 

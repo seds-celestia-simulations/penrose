@@ -22,6 +22,7 @@ void GeodesicPass::execute(const PassContext& ctx) {
     shader->setFloat("uLutRMax", 50.0f);
     
     shader->setInt("uGeodesicLUT", 1);
+    shader->setInt("uNoise3D", 2);
 
     glm::mat4 view = ctx.camera.GetViewMatrix();
     glm::mat4 projection = glm::perspective(
@@ -41,6 +42,9 @@ void GeodesicPass::execute(const PassContext& ctx) {
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, ctx.geodesicLUT);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_3D, ctx.noise3DTexture);
 
     m_renderer.bindParticleBuffer(2);
     shader->setInt("uParticleCount", int(m_renderer.getParticleCount()));

@@ -1,4 +1,5 @@
 #include "noise.glsl"
+layout(binding = 2) uniform sampler3D uNoise3D;
 
 const float DISK_INNER = 0.75;
 const float DISK_OUTER = 5.0;
@@ -42,13 +43,10 @@ bool accumulateVolume(vec3 currentPos, vec3 previousPos, float uTime,
         float spiralWeight = 0.25 * max(1.0 - radial01, 0.0);
         float spiralOffset = spiralWeight * sin(spiralPhase);
 
-        vec3 noiseCoord = vec3(diskR * cos(shearedPhi + spiralOffset),
-                                diskR * sin(shearedPhi + spiralOffset),
-                                currentPos.z * 0.5);
-        float noiseVal = fBm(noiseCoord * 4.0);
-        noiseVal += 0.5 * fBm(noiseCoord * 4.0 + vec3(10.5, 20.3, 5.7));
-        noiseVal += 0.25 * fBm(noiseCoord * 16.0 + vec3(42.1, 13.9, 31.2));
-        noiseVal /= 1.75;
+        vec3 noiseCoord = vec3(diskR * cos(shearedPhi), diskR * sin(shearedPhi), currentPos.z * 1.5);
+        vec3 texCoord = noiseCoord * 0.15;
+
+        float noiseVal = texture(uNoise3D, texCoord).r;
 
         float edgeFade = smoothstep(0.0, 0.15, radial01) * (1.0 - smoothstep(0.6, 1.0, radial01));
         float verticalFade = exp(-2.0 * zDist * zDist / (localHeight * localHeight));

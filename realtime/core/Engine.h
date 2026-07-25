@@ -46,4 +46,5 @@ private:
 
     unsigned int skyboxTexture;
     unsigned int geodesicLUT;
+    unsigned int noise3DTexture;
 };
