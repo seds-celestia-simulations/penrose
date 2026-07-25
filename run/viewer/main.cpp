@@ -1,17 +1,10 @@
 /**
- * Interactive viewer entry point.
- *
- * Pipeline:
- *   Physics (independent SimulationRequest per particle)
- *        ↓
- *   Trajectory storage (SimulationResult / PhysicsTrajectory)
- *        ↓
- *   Visualization preparation (prepare_scene — pass-through today)
- *        ↓
- *   Rendering (ViewerApp)
+ * Interactive viewer entry point — Kerr bound orbit (default).
  *
  *   cmake --build build --target visualization_viewer
  *   ./build/visualization_viewer
+ *
+ * Swap spacetime by commenting/uncommenting the blocks below.
  */
 
 #include "simulation/SimulationRequest.h"
@@ -28,30 +21,46 @@ int main() {
     // STAGE 1 — PHYSICS (one independent request per particle)
     // =========================================================================
 
-    Simulation::SimulationRequest photon_orbit;
-    photon_orbit.config.spacetime = Simulation::SpacetimeKind::Schwarzschild;
-    photon_orbit.config.scenario = Simulation::Scenario::Custom;
-    photon_orbit.config.geodesic = Simulation::GeodesicKind::Null;
-    photon_orbit.config.dt = 0.005;
-    photon_orbit.config.max_steps = 250000;
-    photon_orbit.config.name = "photon_orbit";
-    photon_orbit.metric.mass = 1.0;
+    constexpr double kPi = 3.14159265358979323846;
+
+    Simulation::SimulationRequest orbit;
+    orbit.config.scenario = Simulation::Scenario::BoundOrbit;
+    orbit.config.geodesic = Simulation::GeodesicKind::Timelike;
+    orbit.config.dt = 0.01;
+    orbit.config.max_steps = 100000;
+
+    // --- Schwarzschild ---
+    // orbit.config.spacetime = Simulation::SpacetimeKind::Schwarzschild;
+    // orbit.config.name = "schwarzschild_bound_orbit";
+    // orbit.metric = Spacetime::SchwarzschildParameters{.mass = 1.0};
+    // {
+    //     Simulation::BoundOrbitInitialConditions initial;
+    //     initial.r0 = 6.0;
+    //     initial.theta0 = kPi / 2.0;
+    //     initial.phi0 = 0.0;
+    //     initial.vr = 0.0;
+    //     initial.vtheta = 0.0;
+    //     initial.vphi = 0.06;
+    //     orbit.initial = initial;
+    // }
+
+    // --- Kerr ---
+    Spacetime::KerrParameters kerr{.mass = 1.0, .spin = 0.35};
+    orbit.config.spacetime = Simulation::SpacetimeKind::Kerr;
+    orbit.config.name = "kerr_bound_orbit";
+    orbit.metric = kerr;
     {
-        Simulation::CustomInitialConditions initial;
-        initial.r0 = 1.5; // Exactly 1.5 * rs (photon sphere)
-        initial.theta0 = 1.5707963267948966; // pi/2
-        initial.phi0 = 0.0; // Start on X axis
-        // Unstable circular photon orbit
+        Simulation::BoundOrbitInitialConditions initial;
+        initial.r0 = 6.0;
+        initial.theta0 = kPi / 2.0 - 0.12; // slight inclination to show frame dragging
+        initial.phi0 = 0.0;
         initial.vr = 0.0;
-        initial.vtheta = 0.2; // Tilted orbit
-        initial.vphi = 1.0; 
-        initial.vt = 0.0; // Automatically computed for Null geodesic
-        photon_orbit.initial = initial;
+        initial.vtheta = 0.0;
+        initial.vphi = 0.055;
+        orbit.initial = initial;
     }
 
-    // Add more particles by pushing additional SimulationRequest entries.
-    // Each is integrated independently — no coupled physics.
-    std::vector<Simulation::SimulationRequest> simulations = {photon_orbit};
+    std::vector<Simulation::SimulationRequest> simulations = {orbit};
 
     // =========================================================================
     // STAGE 2 / 3 — VISUALIZATION PREP + RENDER SETTINGS
@@ -60,18 +69,17 @@ int main() {
     viz::VisualizationConfig viz;
     viz.width = 1280;
     viz.height = 720;
-    viz.title = "Penrose Viewer";
-    viz.playback_speed = 4.0f;
+    viz.title = "Penrose Viewer — Kerr Orbit";
+    viz.playback_speed = 3.0f;
 
-    // Visualization resolution (independent of physics dt). Pass-through for now.
     viz.preparation.interpolation_method = viz::InterpolationMethod::PassThrough;
     viz.preparation.render_samples_per_segment = 1;
     viz.preparation.trajectory_resolution = 1.0f;
 
-    viz.scene.horizon_radius = 1.0f; // refined from stored trajectories in prepare_scene
+    viz.scene.horizon_radius = static_cast<float>(kerr.mass);
     viz.scene.show_starfield = true;
     viz.scene.show_event_horizon = true;
-    viz.scene.show_photon_sphere = false;
+    viz.scene.show_photon_sphere = true;
     viz.scene.show_accretion_disk = false;
     viz.scene.show_reference_ring = false;
     viz.scene.background = viz::Color4::rgb(2, 4, 12);
@@ -88,21 +96,21 @@ int main() {
     viz.camera.far_plane = 10000.0f;
 
     viz.presentation.enabled = true;
-    viz.presentation.lensing_strength = 0.07f;
+    viz.presentation.lensing_strength = 0.05f;
     viz.presentation.lensing_radius_scale = 1.85f;
     viz.presentation.bloom_threshold = 0.55f;
-    viz.presentation.bloom_intensity = 0.85f;
+    viz.presentation.bloom_intensity = 0.55f;
     viz.presentation.bloom_radius = 3;
     viz.presentation.vignette = 0.22f;
-    viz.presentation.contrast = 1.12f;
-    viz.presentation.saturation = 1.15f;
-    viz.presentation.lens_ring_strength = 0.62f;
+    viz.presentation.contrast = 1.08f;
+    viz.presentation.saturation = 1.05f;
+    viz.presentation.lens_ring_strength = 0.0f;
     viz.presentation.lens_ring_radius_scale = 1.045f;
     viz.presentation.lens_ring_width_scale = 0.032f;
     viz.presentation.halo_strength = 0.0f;
 
-    viz.trajectory_style.color = viz::Color4::rgb(255, 220, 80);
-    viz.trajectory_style.glow_color = viz::Color4::rgb(255, 180, 50, 130);
+    viz.trajectory_style.color = viz::Color4::rgb(90, 170, 255);
+    viz.trajectory_style.glow_color = viz::Color4::rgb(60, 120, 200, 110);
     viz.trajectory_style.line_width = 2.5f;
     viz.trajectory_style.marker_radius = 0.07f;
     viz.trajectory_style.marker_glow_scale = 2.5f;
@@ -110,7 +118,7 @@ int main() {
     viz.trajectory_style.trail_rgb_min = 0.0f;
     viz.trajectory_style.trail_alpha_min = 0.0f;
     viz.trajectory_style.show_trail = true;
-    viz.trajectory_style.show_marker = false;
+    viz.trajectory_style.show_marker = true;
 
     viz.render.trail_max_dense_segments = 200000;
     viz.render.trail_full_detail_tail = 200000;

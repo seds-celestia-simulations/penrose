@@ -104,12 +104,14 @@ add_dependencies(Penrose BakePhysicsAssets)
 set(PHYSICS_ENGINE_SOURCES
     physics/metrics/CoordinateChart.cpp
     physics/metrics/SchwarzschildMetric.cpp
+    physics/metrics/KerrMetric.cpp
     physics/geodesics/GeodesicDynamics.cpp
     physics/integrators/RK4Integrator.cpp
     physics/simulation/TrajectorySolver.cpp
     physics/simulation/TerminationPolicy.cpp
     physics/simulation/SimulationPipeline.cpp
     physics/simulation/initial_conditions/SchwarzschildInitialStateBuilders.cpp
+    physics/simulation/initial_conditions/KerrInitialStateBuilders.cpp
 )
 
 add_library(penrose_physics STATIC ${PHYSICS_ENGINE_SOURCES})

@@ -30,7 +30,7 @@ OpenGL code is confined to `visualization/Renderer/Gpu/` and the `visualization_
 ### GPU viewer scope (v1)
 
 - Background clear + starfield (`visualization/resources/`) with mild rim warp
-- Opaque event-horizon disc and dense glow ring (billboard; no mesh silhouette)
+- Opaque event-horizon disc (billboard; scene flags control related visuals)
 - Solid trajectory ribbons with along-path and distance fall-off
 - Current-position markers and playback highlight
 - Deferred: GPU bloom / cosmetic lensing matching CPU `PostProcessor`

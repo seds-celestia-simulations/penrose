@@ -16,12 +16,14 @@ from .schemas import (
     validate_columns,
 )
 
+_NULL_FILENAME_RE = re.compile(r"null_(?:kerr_)?b_(.+)\.csv")
+
 
 def _load_csv(path: Path, schema: BenchmarkSchema) -> pd.DataFrame:
     if not path.is_file():
         raise FileNotFoundError(
             f"Benchmark CSV not found: {path}\n"
-            f"Run ./build/benchmark_test from the repository root first."
+            f"Run ./build/physics_benchmark from the repository root first."
         )
     if path.stat().st_size == 0:
         raise ValueError(f"Benchmark CSV is empty (still being written?): {path}")
@@ -32,18 +34,47 @@ def _load_csv(path: Path, schema: BenchmarkSchema) -> pd.DataFrame:
     return df
 
 
+def resolve_benchmark_csv(data_dir: Path, schema: BenchmarkSchema) -> Path:
+    """Pick the first existing filename candidate for a single-file schema."""
+    if not schema.filenames:
+        raise ValueError(f"Schema '{schema.name}' has no single-file candidates")
+    tried: list[str] = []
+    for name in schema.filenames:
+        path = data_dir / name
+        tried.append(name)
+        if path.is_file() and path.stat().st_size > 0:
+            return path
+    raise FileNotFoundError(
+        f"Benchmark CSV not found for '{schema.name}' in {data_dir}. "
+        f"Tried: {tried}. Run ./build/physics_benchmark first."
+    )
+
+
+def is_kerr_run(data_dir: Path | None = None) -> bool:
+    data_dir = data_dir or benchmark_data_dir()
+    return any(data_dir.glob("*kerr*"))
+
+
 def load_freefall(data_dir: Path | None = None) -> pd.DataFrame:
     data_dir = data_dir or benchmark_data_dir()
-    return _load_csv(data_dir / FREEFALL_SCHEMA.filename, FREEFALL_SCHEMA)
+    path = resolve_benchmark_csv(data_dir, FREEFALL_SCHEMA)
+    df = _load_csv(path, FREEFALL_SCHEMA)
+    df.attrs["source_file"] = path.name
+    df.attrs["spacetime"] = "kerr" if "kerr" in path.name else "schwarzschild"
+    return df
 
 
 def load_orbital(data_dir: Path | None = None) -> pd.DataFrame:
     data_dir = data_dir or benchmark_data_dir()
-    return _load_csv(data_dir / ORBITAL_SCHEMA.filename, ORBITAL_SCHEMA)
+    path = resolve_benchmark_csv(data_dir, ORBITAL_SCHEMA)
+    df = _load_csv(path, ORBITAL_SCHEMA)
+    df.attrs["source_file"] = path.name
+    df.attrs["spacetime"] = "kerr" if "kerr" in path.name else "schwarzschild"
+    return df
 
 
 def impact_parameter_from_filename(path: Path) -> float:
-    match = re.fullmatch(r"null_b_(.+)\.csv", path.name)
+    match = _NULL_FILENAME_RE.fullmatch(path.name)
     if not match:
         raise ValueError(f"Cannot parse impact parameter from filename: {path.name}")
     return float(match.group(1))
@@ -51,11 +82,17 @@ def impact_parameter_from_filename(path: Path) -> float:
 
 def list_null_geodesic_csvs(data_dir: Path | None = None) -> list[Path]:
     data_dir = data_dir or benchmark_data_dir()
-    paths = sorted(data_dir.glob(NULL_GEODESIC_SCHEMA.filename_glob))
+    paths: list[Path] = []
+    seen: set[Path] = set()
+    for pattern in NULL_GEODESIC_SCHEMA.filename_globs:
+        for path in sorted(data_dir.glob(pattern)):
+            if path not in seen:
+                paths.append(path)
+                seen.add(path)
     if not paths:
         raise FileNotFoundError(
-            f"No null geodesic CSVs matching '{NULL_GEODESIC_SCHEMA.filename_glob}' "
-            f"in {data_dir}. Run benchmark_test first."
+            f"No null geodesic CSVs matching {NULL_GEODESIC_SCHEMA.filename_globs} "
+            f"in {data_dir}. Run ./build/physics_benchmark first."
         )
     return paths
 
@@ -64,6 +101,7 @@ def load_null_geodesic(path: Path) -> pd.DataFrame:
     df = _load_csv(path, NULL_GEODESIC_SCHEMA)
     df.attrs["impact_parameter"] = impact_parameter_from_filename(path)
     df.attrs["source_file"] = path.name
+    df.attrs["spacetime"] = "kerr" if "kerr" in path.name else "schwarzschild"
     return df
 
 

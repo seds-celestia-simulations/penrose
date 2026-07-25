@@ -6,10 +6,11 @@ Penrose combines a validated CPU reference solver, scientific benchmarking tools
 
 ---
 
-## Real-Time Schwarzschild Rendering
+## Real-Time Kerr Rendering
 
 <img width="1920" height="675" alt="image" src="https://github.com/user-attachments/assets/09155160-bac0-4b90-a0d9-e39732910ce2" />
 
+*(GPU compute ray march — default metric in `realtime/` is Kerr via `kerr_full.glsl`.)*
 
 ## Null Geodesic Evolution
 
@@ -19,9 +20,9 @@ Penrose combines a validated CPU reference solver, scientific benchmarking tools
 
 ## Physics
 
-Penrose evolves **timelike** and **null geodesics** by numerically integrating the geodesic equation on arbitrary spacetime metrics.
+Penrose evolves **timelike** and **null geodesics** by numerically integrating the geodesic equation on spacetime metrics.
 
-$$\frac{d^2x^\mu}{d\tau^2}+\Gamma^\mu_{\alpha\beta}\frac{dx^\alpha}{d\tau}\frac{dx^\beta}{d\tau}=0\$$
+$$\frac{d^2x^\mu}{d\tau^2}+\Gamma^\mu_{\alpha\beta}\frac{dx^\alpha}{d\tau}\frac{dx^\beta}{d\tau}=0$$
 
 The simulation engine separates spacetime geometry, equations of motion, numerical integration, data storage, and visualization, allowing physical models and rendering systems to evolve independently.
 
@@ -29,23 +30,23 @@ The simulation engine separates spacetime geometry, equations of motion, numeric
 
 ## Current Capabilities
 
-### Physics
+### Physics (CPU)
 
-* Schwarzschild spacetime
+* Schwarzschild and Kerr spacetimes (CPU production paths)
 * Timelike and null geodesic evolution
 * Analytical Christoffel symbols
 * RK4 geodesic integration
 * Configurable termination policies
-* Extensible spacetime interface for future metrics
+* Extensible `Spacetime::Metric` interface (`SimulationRequest::metric` variant)
 
 ### Scientific Analysis
 
 * Reference CPU implementation
-* Validation benchmark suite
+* Validation benchmark suite (Schwarzschild or Kerr CSVs)
 * Conserved quantity monitoring
 * Integration convergence studies
 * CSV trajectory export
-* Python-based analysis and figure generation
+* Python-based analysis and figure generation (`physics/analysis/`)
 
 ### Trajectory Visualization
 
@@ -61,8 +62,8 @@ A modular visualization pipeline decoupled from the physics engine.
 
 An independent GPU renderer for interactive exploration of relativistic optics.
 
-* Real-time Schwarzschild ray marching
-* OpenGL / GLSL renderer
+* Real-time **Kerr** compute-shader ray marching (default); Schwarzschild full/reduced paths available via shader includes
+* OpenGL 4.3 / GLSL 430
 * Interactive camera controls
 * Frame capture and image export
 * High-performance gravitational lensing visualization
@@ -111,23 +112,23 @@ Presentation effects are purely visual and never influence the underlying simula
 
 ## 3. GPU Real-Time Rendering
 
-Interactive visualization of Schwarzschild spacetime via fragment ray marching.
+Interactive visualization via compute-shader geodesic march (Kerr by default).
 
 ```text
 Engine / Camera
     ↓
-Renderer
+GeodesicPass (compute dispatch)
     ↓
-Fragment Shader
+Metric GLSL (kerr_full / schwarzschild_*)
     ↓
-Geodesic March
+March loop → image → screen blit
     ↓
 Frame (+ optional FrameCapture)
 ```
 
 The CPU physics pipeline remains the scientific reference implementation.
 
-The GPU ray-march renderer is optimized for interactive lensing exploration.
+The GPU ray-march renderer is optimized for interactive lensing exploration and does not share the CPU metric implementation.
 
 Current architecture reference: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -155,7 +156,7 @@ Trajectory visualization uses **config-driven executables**. Edit the matching `
 
 | Goal | Edit | Command |
 |------|------|---------|
-| GPU ray-march renderer | — | `./build/Penrose` |
+| GPU ray-march renderer (Kerr default) | `realtime/shaders/reduced.comp` to swap metrics | `./build/Penrose` |
 | Physics benchmarks | `run/benchmark/main.cpp` | `./build/physics_benchmark` |
 | Interactive trajectory viewer (GPU) | `run/viewer/main.cpp` | `./build/visualization_viewer` |
 | Export still / sequence (CPU) | `run/export/main.cpp` | `./build/visualization_export` |
@@ -177,6 +178,7 @@ Complete walkthrough: [`docs/VISUALIZATION_GUIDE.md`](docs/VISUALIZATION_GUIDE.m
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Current architecture (sole reference) |
 | [`docs/VISUALIZATION_GUIDE.md`](docs/VISUALIZATION_GUIDE.md) | Trajectory viz three-executable UX |
 | [`docs/RUNNING.md`](docs/RUNNING.md) | Install / run all pipelines |
+| [`AGENTS.md`](AGENTS.md) | Conventions for AI / contributor agents |
 
 ---
 
@@ -184,10 +186,14 @@ Complete walkthrough: [`docs/VISUALIZATION_GUIDE.md`](docs/VISUALIZATION_GUIDE.m
 
 Penrose is evolving toward a general relativistic simulation framework.
 
+Near-term:
+
+- Realtime `MetricType` + runtime Kerr parameters from C++ (replace hardcoded GLSL constants)
+- Align realtime metric identity with `shared/` vocabulary
+
 Planned capabilities include
 
 - Solar Gravitational Lensing
-- Kerr spacetime
 - Numerical metrics
 - Coupled multi-body dynamics (independent multi-particle overlay already supported)
 - Photon bundles / ray ensembles
@@ -199,13 +205,12 @@ Planned capabilities include
 
 # Current Status
 
-Penrose currently provides a complete Schwarzschild simulation framework consisting of
+Penrose currently provides:
 
-- validated CPU physics
-- scientific benchmarking and Python analysis
+- validated CPU **Schwarzschild** and **Kerr** physics with scientific benchmarking and Python analysis
 - three-stage trajectory visualization with dual Stage 3 backends (GPU viewer / CPU export)
-- GPU real-time ray-march rendering
+- GPU real-time compute ray-march rendering with **Kerr as the default** shader metric
 
-Development is now focused on generalized spacetime support and expanding Penrose beyond Schwarzschild into a modular General Relativity research framework.
+Development continues toward fuller shared-vocabulary alignment between CPU and GPU pipelines.
 
 ---

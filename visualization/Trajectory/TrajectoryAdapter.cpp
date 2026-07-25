@@ -8,7 +8,8 @@
 namespace viz {
 
 Trajectory adapt_states(std::span<const State> states, const TrajectoryAdapterOptions& options) {
-    if (options.coordinate_chart != Spacetime::CoordinateChartKind::SchwarzschildSpherical) {
+    if (options.coordinate_chart != Spacetime::CoordinateChartKind::SchwarzschildSpherical &&
+        options.coordinate_chart != Spacetime::CoordinateChartKind::KerrBoyerLindquist) {
         throw std::runtime_error("TrajectoryAdapter: unsupported coordinate chart");
     }
 
@@ -17,7 +18,7 @@ Trajectory adapt_states(std::span<const State> states, const TrajectoryAdapterOp
 
     for (std::size_t i = 0; i < states.size(); ++i) {
         const State& state = states[i];
-        // Schwarzschild spherical chart: X = (t, r, theta, phi)
+        // Schwarzschild spherical / Kerr BL: X = (t, r, theta, phi)
         const double r = state.X[1];
         const double theta = state.X[2];
         const double phi = state.X[3];

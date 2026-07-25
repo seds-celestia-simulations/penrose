@@ -3,6 +3,7 @@
 
 #include "../export/benchmark_io.h"
 #include "../simulation/SimulationRequest.h"
+#include "../validation/observables/KerrObservables.h"
 #include "../validation/observables/SchwarzschildObservables.h"
 
 #include <cmath>
@@ -104,4 +105,86 @@ void benchmark_freefall(double rs, double r0, double dt, int max_steps) {
     csv.close();
     std::cout << "\nCSV written to " << (benchmark_data_dir() / "freefall.csv") << "\n";
     std::cout << "=== Free-fall complete ===\n";
+}
+
+void benchmark_freefall(const Spacetime::KerrParameters& metric, double r0, double dt,
+                        int max_steps) {
+    Simulation::SimulationConfig config;
+    config.spacetime = Simulation::SpacetimeKind::Kerr;
+    config.scenario = Simulation::Scenario::RadialFreefall;
+    config.geodesic = Simulation::GeodesicKind::Timelike;
+    config.dt = dt;
+    config.max_steps = max_steps;
+    config.horizon_safety_factor = 1.0;
+    config.name = "freefall_kerr";
+
+    Simulation::RadialFreefallInitialConditions initial;
+    initial.r0 = r0;
+
+    const Simulation::SimulationResult result =
+        Simulation::run_simulation(config, metric, initial);
+    const std::vector<State>& history = result.history;
+    const double horizon = Physics::Observables::outer_horizon_radius(metric);
+
+    {
+        const double norm = Physics::Observables::timelike_norm(history.front(), metric);
+        const double E = Physics::Observables::conserved_energy(history.front(), metric);
+        std::cout << "\n=== Free-Fall Benchmark (Kerr) ===\n";
+        std::cout << std::fixed << std::setprecision(8);
+        std::cout << "r0                       = " << r0 << "\n";
+        std::cout << "rs                       = " << metric.mass << "\n";
+        std::cout << "spin                     = " << metric.spin << "\n";
+        std::cout << "r_+                      = " << horizon << "\n";
+        std::cout << "dt                       = " << dt << "\n";
+        std::cout << "vt                       = " << history.front().U[0] << "\n";
+        std::cout << "vr                       = " << history.front().U[1] << "\n";
+        std::cout << "norm     (should be -1)  = " << norm << "\n";
+        std::cout << "E        (conserved)     = " << E << "\n\n";
+    }
+
+    std::ofstream csv = open_benchmark_csv("freefall_kerr.csv");
+    if (!csv.is_open()) {
+        return;
+    }
+    csv << "tau,r,vt,vr\n";
+
+    std::cout << std::setw(10) << "step" << std::setw(14) << "tau" << std::setw(12) << "r"
+              << std::setw(14) << "vt" << std::setw(14) << "vr" << "\n";
+    std::cout << std::string(64, '-') << "\n";
+
+    for (size_t step = 0; step < history.size(); ++step) {
+        const State& state = history[step];
+        const double tau = step * dt;
+        const double r_ = state.X[1];
+        const double vt_ = state.U[0];
+        const double vr_ = state.U[1];
+
+        csv << std::fixed << std::setprecision(8) << tau << "," << r_ << "," << vt_ << "," << vr_
+            << "\n";
+
+        if (step % 500 == 0) {
+            std::cout << std::setw(10) << step << std::setw(14) << tau << std::setw(12) << r_
+                      << std::setw(14) << vt_ << std::setw(14) << vr_ << "\n";
+        }
+
+        if (std::isnan(r_)) {
+            std::cout << "TERMINATED: r became NaN at step " << step << "\n";
+            break;
+        }
+
+        if (r_ <= horizon) {
+            std::cout << "\n--- Outer horizon crossed at step " << step << " ---\n";
+            std::cout << "tau_numerical  = " << tau << "\n";
+            break;
+        }
+    }
+
+    if (history.size() == max_steps + 1) {
+        const State& last_state = history.back();
+        std::cout << "TERMINATED: Reached max steps. r is currently: " << last_state.X[1] << "\n";
+    }
+
+    csv.close();
+    std::cout << "\nCSV written to " << (benchmark_data_dir() / "freefall_kerr.csv") << "\n";
+    std::cout << "=== Free-fall (Kerr) complete ===\n";
 }

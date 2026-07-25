@@ -1,8 +1,13 @@
 # Executive Summary
 
+> **Status note (2026-07):** Historical / non-normative relative to [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
+> The pass-oriented compute pipeline described here remains accurate. Metric ownership claims still
+> apply, with the update that **Kerr is now the default GLSL path** (`kerr_full.glsl` via
+> `reduced.comp`); C++ `MetricType` and `shared/` consumption remain incomplete.
+
 The realtime engine has achieved a useful **backend-local rendering architecture**, but not yet a durable **Penrose framework architecture**. Its strongest architectural move is the pass-oriented compute pipeline: `Engine` builds a `PassContext`, `GeodesicPass` performs ray/geodesic compute work, and `UpscalePass` presents the result. That gives the renderer a real extension point for rendering stages.
 
-The main architectural weakness is that the realtime backend currently owns several concepts that are not purely rendering concerns: Schwarzschild metric behavior, reduced geodesic integration, observer/camera assumptions, particle state semantics, accretion disk physics, LUT baking, coordinate conventions, and metric identity. `shared/` is linked but not used by realtime source code, so the intended shared architecture is not yet operative.
+The main architectural weakness is that the realtime backend currently owns several concepts that are not purely rendering concerns: metric behavior (Kerr/Schwarzschild selected in GLSL), reduced geodesic integration, observer/camera assumptions, particle state semantics, accretion disk physics, LUT baking, coordinate conventions, and metric identity. `shared/` is linked but not used by realtime source code, so the intended shared architecture is not yet operative.
 
 Evidence: `Engine` owns render resources and domain objects together:
 
