@@ -77,6 +77,9 @@ in vec2 vUV;
 uniform vec2 uHorizonCenter;
 uniform float uHorizonRadiusPx;
 uniform float uHorizonRadiusWorld;
+uniform float uPhotonSphereRadiusPx;
+uniform int uShowPhotonSphere;
+uniform int uPass; // 0 = opaque disc, 1 = glow + photon ring
 uniform vec3 uCameraPos;
 uniform vec3 uCameraFwd;
 uniform vec3 uCameraUp;
@@ -106,21 +109,52 @@ void main() {
     vec2 px = vUV * uResolution;
     vec2 center_px = uHorizonCenter * uResolution;
     float dist_px = length(px - center_px);
-    
-    if (dist_px <= uHorizonRadiusPx) {
-        float ndc_x = vUV.x * 2.0 - 1.0;
-        float ndc_y = vUV.y * 2.0 - 1.0;
-        float tan_half = tan(uFov * 0.5);
-        vec3 dir = normalize(uCameraFwd + uCameraRight * (ndc_x * tan_half * uAspect) + uCameraUp * (ndc_y * tan_half));
-        
-        float horizon_depth = central_horizon_clip_depth(uCameraPos, dir);
-        if (horizon_depth != 9999.0) {
+    float horizon_px = max(uHorizonRadiusPx, 1.0);
+
+    float ndc_x = vUV.x * 2.0 - 1.0;
+    float ndc_y = vUV.y * 2.0 - 1.0;
+    float tan_half = tan(uFov * 0.5);
+    vec3 dir = normalize(uCameraFwd + uCameraRight * (ndc_x * tan_half * uAspect) + uCameraUp * (ndc_y * tan_half));
+    float horizon_depth = central_horizon_clip_depth(uCameraPos, dir);
+
+    if (uPass == 0) {
+        if (dist_px <= horizon_px && horizon_depth != 9999.0) {
             gl_FragDepth = horizon_depth * 0.5 + 0.5;
             FragColor = vec4(0.0, 0.0, 0.0, 1.0);
             return;
         }
+        discard;
     }
-    discard;
+
+    // Soft atmospheric glow outside the disc.
+    float glow_outer = horizon_px * 1.85;
+    float glow_alpha = 0.0;
+    if (dist_px > horizon_px && dist_px < glow_outer) {
+        float t = (dist_px - horizon_px) / max(1.0, glow_outer - horizon_px);
+        glow_alpha = 0.22 * pow(1.0 - t, 1.6);
+    }
+
+    // Thin visual photon-sphere ring (decorative, not a GR ray trace).
+    float photon_alpha = 0.0;
+    if (uShowPhotonSphere != 0 && uPhotonSphereRadiusPx > horizon_px) {
+        float ring_half = max(2.0, horizon_px * 0.035);
+        float d = abs(dist_px - uPhotonSphereRadiusPx);
+        if (d < ring_half) {
+            float edge = 1.0 - d / ring_half;
+            photon_alpha = 0.35 * edge * edge;
+        }
+    }
+
+    float alpha = max(glow_alpha, photon_alpha);
+    if (alpha < 0.01) {
+        discard;
+    }
+
+    // Muted warm ash — visible but not neon.
+    vec3 glow_rgb = vec3(0.70, 0.58, 0.42);
+    vec3 photon_rgb = vec3(0.82, 0.78, 0.70);
+    vec3 color = mix(glow_rgb, photon_rgb, clamp(photon_alpha / max(alpha, 1e-4), 0.0, 1.0));
+    FragColor = vec4(color, alpha);
 }
 )";
 
@@ -569,8 +603,10 @@ void GpuPolylineBackend::upload_scene(const Scene& scene) {
     use_image_starfield_ = settings.use_image_starfield;
     starfield_brightness_ = settings.starfield_brightness;
     show_event_horizon_ = settings.show_event_horizon;
+    show_photon_sphere_ = settings.show_photon_sphere;
     background_ = settings.background;
     horizon_radius_ = settings.horizon_radius;
+    photon_sphere_radius_ = settings.horizon_radius * 1.5f;
 
     trajectories_.reserve(scene.trajectories().size());
     for (const Trajectory& traj : scene.trajectories()) {
@@ -880,29 +916,54 @@ void GpuPolylineBackend::render(const Scene& scene, const Camera& camera,
     }
 
     if (show_event_horizon_ && horizon_radius_ > 0.0f) {
-        glEnable(GL_DEPTH_TEST);
-        glDepthMask(GL_TRUE); // Mask must write depth
-        glDepthFunc(GL_LESS);
-        
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
         const HorizonScreen horizon = project_central_horizon(camera, horizon_radius_, width_, height_);
-        horizon_mask_program_.use();
-        horizon_mask_program_.set_vec2("uHorizonCenter", horizon.center_u, 1.0f - horizon.center_v);
-        horizon_mask_program_.set_float("uHorizonRadiusPx", horizon.radius_px);
-        horizon_mask_program_.set_float("uHorizonRadiusWorld", horizon_radius_);
-        horizon_mask_program_.set_vec3("uCameraPos", camera.position().x, camera.position().y, camera.position().z);
-        horizon_mask_program_.set_vec3("uCameraFwd", camera.forward().x, camera.forward().y, camera.forward().z);
-        horizon_mask_program_.set_vec3("uCameraUp", camera.up().x, camera.up().y, camera.up().z);
-        const Vec3 right = camera.up().cross(camera.forward()).normalized();
-        horizon_mask_program_.set_vec3("uCameraRight", right.x, right.y, right.z);
-        horizon_mask_program_.set_float("uAspect", aspect);
-        horizon_mask_program_.set_float("uFov", camera.fov_y());
-        const Mat4 mvp = camera.view_projection(aspect);
-        horizon_mask_program_.set_mat4("uMVP", mvp.m.data());
-        horizon_mask_program_.set_vec2("uResolution", static_cast<float>(width_), static_cast<float>(height_));
-        
+        const HorizonScreen photon =
+            project_central_horizon(camera, photon_sphere_radius_, width_, height_);
+
+        auto set_horizon_uniforms = [&]() {
+            horizon_mask_program_.use();
+            horizon_mask_program_.set_vec2("uHorizonCenter", horizon.center_u, 1.0f - horizon.center_v);
+            horizon_mask_program_.set_float("uHorizonRadiusPx", horizon.radius_px);
+            horizon_mask_program_.set_float("uHorizonRadiusWorld", horizon_radius_);
+            horizon_mask_program_.set_float("uPhotonSphereRadiusPx", photon.radius_px);
+            horizon_mask_program_.set_int("uShowPhotonSphere", show_photon_sphere_ ? 1 : 0);
+            horizon_mask_program_.set_vec3("uCameraPos", camera.position().x, camera.position().y,
+                                           camera.position().z);
+            horizon_mask_program_.set_vec3("uCameraFwd", camera.forward().x, camera.forward().y,
+                                           camera.forward().z);
+            horizon_mask_program_.set_vec3("uCameraUp", camera.up().x, camera.up().y, camera.up().z);
+            const Vec3 right = camera.up().cross(camera.forward()).normalized();
+            horizon_mask_program_.set_vec3("uCameraRight", right.x, right.y, right.z);
+            horizon_mask_program_.set_float("uAspect", aspect);
+            horizon_mask_program_.set_float("uFov", camera.fov_y());
+            const Mat4 mvp = camera.view_projection(aspect);
+            horizon_mask_program_.set_mat4("uMVP", mvp.m.data());
+            horizon_mask_program_.set_vec2("uResolution", static_cast<float>(width_),
+                                           static_cast<float>(height_));
+        };
+
+        // Pass 0: opaque filled disc with depth write.
+        glEnable(GL_DEPTH_TEST);
+        glDepthMask(GL_TRUE);
+        glDepthFunc(GL_LESS);
+        set_horizon_uniforms();
+        horizon_mask_program_.set_int("uPass", 0);
         glBindVertexArray(fullscreen_vao_);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+        // Pass 1: glow + photon ring without depth test so FX are actually visible.
+        glDisable(GL_DEPTH_TEST);
+        glDepthMask(GL_FALSE);
+        set_horizon_uniforms();
+        horizon_mask_program_.set_int("uPass", 1);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         glBindVertexArray(0);
+
+        glEnable(GL_DEPTH_TEST);
+        glDepthMask(GL_TRUE);
     }
 
     // Trajectories and Markers

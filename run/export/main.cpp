@@ -1,17 +1,10 @@
 /**
- * Headless export entry point.
- *
- * Pipeline:
- *   Physics (independent SimulationRequest per particle)
- *        ↓
- *   Trajectory storage
- *        ↓
- *   Visualization preparation (prepare_scene)
- *        ↓
- *   Rendering (CpuRasterizerBackend → PPM)
+ * Headless export entry point — Kerr bound orbit (default).
  *
  *   cmake --build build --target visualization_export
  *   ./build/visualization_export
+ *
+ * Swap spacetime by commenting/uncommenting the blocks below.
  */
 
 #include "simulation/SimulationRequest.h"
@@ -33,19 +26,42 @@ int main() {
     // STAGE 1 — PHYSICS (one independent request per particle)
     // =========================================================================
 
+    constexpr double kPi = 3.14159265358979323846;
+
     Simulation::SimulationRequest orbit;
-    orbit.config.spacetime = Simulation::SpacetimeKind::Schwarzschild;
     orbit.config.scenario = Simulation::Scenario::BoundOrbit;
     orbit.config.geodesic = Simulation::GeodesicKind::Timelike;
     orbit.config.dt = 0.01;
     orbit.config.max_steps = 100000;
-    orbit.config.name = "orbital";
-    orbit.metric.mass = 1.0;
+
+    // --- Schwarzschild ---
+    // orbit.config.spacetime = Simulation::SpacetimeKind::Schwarzschild;
+    // orbit.config.name = "schwarzschild_orbital";
+    // orbit.metric = Spacetime::SchwarzschildParameters{.mass = 1.0};
+    // {
+    //     Simulation::BoundOrbitInitialConditions initial;
+    //     initial.r0 = 6.0;
+    //     initial.theta0 = kPi / 2.0;
+    //     initial.phi0 = 0.0;
+    //     initial.vr = 0.0;
+    //     initial.vtheta = 0.0;
+    //     initial.vphi = 0.06;
+    //     orbit.initial = initial;
+    // }
+
+    // --- Kerr ---
+    Spacetime::KerrParameters kerr{.mass = 1.0, .spin = 0.35};
+    orbit.config.spacetime = Simulation::SpacetimeKind::Kerr;
+    orbit.config.name = "kerr_orbital";
+    orbit.metric = kerr;
     {
         Simulation::BoundOrbitInitialConditions initial;
         initial.r0 = 6.0;
+        initial.theta0 = kPi / 2.0 - 0.12;
+        initial.phi0 = 0.0;
         initial.vr = 0.0;
-        initial.vphi = 0.06;
+        initial.vtheta = 0.0;
+        initial.vphi = 0.055;
         orbit.initial = initial;
     }
 
@@ -65,10 +81,10 @@ int main() {
     viz.preparation.render_samples_per_segment = 1;
     viz.preparation.trajectory_resolution = 1.0f;
 
-    viz.scene.horizon_radius = 1.0f;
+    viz.scene.horizon_radius = static_cast<float>(kerr.mass);
     viz.scene.show_starfield = true;
     viz.scene.show_event_horizon = true;
-    viz.scene.show_photon_sphere = false;
+    viz.scene.show_photon_sphere = true;
     viz.scene.show_accretion_disk = false;
     viz.scene.show_reference_ring = false;
     viz.scene.background = viz::Color4::rgb(2, 4, 12);
@@ -77,7 +93,6 @@ int main() {
     viz.camera.auto_frame_distance_scale = 1.35f;
     viz.camera.auto_frame_min_distance = 8.0f;
     viz.camera.auto_frame_max_distance = 120.0f;
-    // Tilted 3/4 view — equatorial orbits live in xy; yaw keeps the camera off-plane.
     viz.camera.auto_frame_pitch = 0.58f;
     viz.camera.fov_y = 0.95f;
     viz.camera.distance = 12.0f;
@@ -85,21 +100,21 @@ int main() {
     viz.camera.pitch = 0.58f;
 
     viz.presentation.enabled = true;
-    viz.presentation.lensing_strength = 0.07f;
+    viz.presentation.lensing_strength = 0.05f;
     viz.presentation.lensing_radius_scale = 1.85f;
     viz.presentation.bloom_threshold = 0.55f;
-    viz.presentation.bloom_intensity = 0.85f;
+    viz.presentation.bloom_intensity = 0.55f;
     viz.presentation.bloom_radius = 3;
     viz.presentation.vignette = 0.22f;
-    viz.presentation.contrast = 1.12f;
-    viz.presentation.saturation = 1.15f;
-    viz.presentation.lens_ring_strength = 0.62f;
+    viz.presentation.contrast = 1.08f;
+    viz.presentation.saturation = 1.05f;
+    viz.presentation.lens_ring_strength = 0.0f;
     viz.presentation.lens_ring_radius_scale = 1.045f;
     viz.presentation.lens_ring_width_scale = 0.032f;
     viz.presentation.halo_strength = 0.0f;
 
-    viz.trajectory_style.color = viz::Color4::rgb(255, 220, 80);
-    viz.trajectory_style.glow_color = viz::Color4::rgb(255, 180, 50, 130);
+    viz.trajectory_style.color = viz::Color4::rgb(90, 170, 255);
+    viz.trajectory_style.glow_color = viz::Color4::rgb(60, 120, 200, 110);
     viz.trajectory_style.line_width = 2.5f;
     viz.trajectory_style.marker_radius = 0.07f;
     viz.trajectory_style.marker_glow_scale = 2.5f;

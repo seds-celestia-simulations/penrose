@@ -2,7 +2,9 @@
 
 This is the **sole current architecture reference** for Penrose.
 
-Penrose is a modular General Relativity framework: a CPU reference geodesic solver, a trajectory visualization stack (GPU interactive viewer + headless CPU export), and a separate GPU real-time ray-march renderer. The design goal is to add new spacetimes (Kerr, SGL, FLRW, …) by extending physics modules—not by rewriting entry points or a catch-all config struct.
+Penrose is a modular General Relativity framework: a CPU reference geodesic solver, a trajectory visualization stack (GPU interactive viewer + headless CPU export), and a separate GPU real-time compute ray-march renderer. The design goal is to add new spacetimes (Kerr, SGL, FLRW, …) by extending physics modules—not by rewriting entry points or a catch-all config struct.
+
+**Metric status today:** Schwarzschild and Kerr are both production CPU paths (metrics, ICs, solver, benchmarks, analysis). The GPU realtime app defaults to Kerr via GLSL includes (`kerr_full.glsl`).
 
 ---
 
@@ -21,7 +23,7 @@ Penrose is a modular General Relativity framework: a CPU reference geodesic solv
 |----------|------|-----------|
 | **physics/** | Analytic metrics, dynamics, RK4, trajectory solve, validation | Scientific correctness |
 | **visualization/** | Stored trajectories → preparation → scene → Stage 3 render backends | Publication / orbit illustrations |
-| **realtime/** | OpenGL + GLSL null geodesic ray march | Interactive lensing imagery |
+| **realtime/** | OpenGL 4.3 + GLSL **compute** null geodesic ray march | Interactive lensing imagery |
 
 Pipelines are intentionally loosely coupled. Visualization consumes stored `State` histories (never constructs metrics or solvers). Realtime does **not** share the CPU metric implementation; it remains a separate shader-resident path. Trajectory-viz GPU code (`visualization_gpu`) also does **not** include or link `realtime/`.
 
@@ -75,10 +77,10 @@ Metric- and scenario-specific numbers live in dedicated types:
 
 | Kind | Example | Location |
 |------|---------|----------|
-| Metric params | `SchwarzschildParameters` | `shared/metrics/` (POD vocabulary) |
+| Metric params | `SchwarzschildParameters`, `KerrParameters` | `shared/metrics/` (POD vocabulary) |
 | Initial conditions | `BoundOrbitInitialConditions`, … | `physics/simulation/initial_conditions/` |
 
-Bundle them per particle as a `SimulationRequest` (`config` + `metric` + `initial` variant):
+Bundle them per particle as a `SimulationRequest` (`config` + `metric` variant + `initial` variant):
 
 ```cpp
 std::vector<Simulation::SimulationRequest> simulations = {orbit1, orbit2};
@@ -88,7 +90,7 @@ auto scene = viz::prepare_scene(stored, viz);
 // Or: viz::prepare_scene_from_results(trajectories, viz) in run/viewer and run/export
 ```
 
-Adding Kerr should introduce `KerrParameters` and a new `run_simulation` overload—not new fields on `SimulationConfig`.
+`SimulationRequest::metric` is `std::variant<SchwarzschildParameters, KerrParameters>`. Select spacetime with `config.spacetime` and the matching parameter type (or `make_schwarzschild_request` / `make_kerr_request`).
 
 ### Layer 3 — visualization preparation + drawing
 
@@ -119,14 +121,15 @@ Built as the `penrose_physics` static library (`CMakeLists.txt`). CPU consumers 
 | `shared/state/GeodesicState.h` | `State` |
 | `shared/spacetime/MetricKind.h` | `MetricKind`, `CoordinateChartKind` |
 | `shared/metrics/SchwarzschildParameters.h` | Schwarzschild POD parameters |
+| `shared/metrics/KerrParameters.h` | Kerr POD parameters (`mass` = `rs`, `spin` = `a`) |
 | `shared/spacetime/Metric.h` | Narrow Christoffel evaluator interface (CPU today) |
-| `physics/metrics/` | Concrete metrics + `CoordinateChart` transforms |
+| `physics/metrics/` | `SchwarzschildMetric`, `KerrMetric`; `CoordinateChart` |
 | `physics/geodesics/` | `DynamicsModel`, `GeodesicDynamics` |
 | `physics/integrators/` | `Integrator` interface, RK4 default |
-| `physics/simulation/` | `TrajectorySolver`, `TerminationPolicy`, `SimulationConfig`, `SimulationRequest`, `SimulationPipeline`, IC builders |
+| `physics/simulation/` | `TrajectorySolver`, `TerminationPolicy`, `SimulationConfig`, `SimulationRequest`, `SimulationPipeline`, Schwarzschild + Kerr IC builders |
 | `physics/validation/` | Benchmark drivers (consumers of `run_simulation`) + `BenchmarkRunner` |
-| `physics/validation/observables/` | Reusable invariant / observable helpers |
-| `physics/analysis/` | Python benchmark analysis / figures / reports |
+| `physics/validation/observables/` | Schwarzschild + Kerr invariant / observable helpers |
+| `physics/analysis/` | Python benchmark analysis / figures / reports (discovers Sch or Kerr CSVs) |
 | `physics/export/` | Benchmark CSV I/O helpers |
 
 `SimulationPipeline` resolves metric + ICs from Layer 2 types and calls the solver. Validation drivers build `SimulationRequest` objects and call `run_simulation` — they no longer construct metrics/solvers directly. `run_all` integrates each `SimulationRequest` independently (no coupled multi-body integration).
@@ -174,7 +177,7 @@ The renderer never cares which integrator, spacetime, or step count produced a c
 | `GpuPolylineBackend` | `visualization_gpu` (viewer only) | `visualization_viewer` | OpenGL draw into GLFW framebuffer |
 | `CpuRasterizerBackend` | `visualization` | `visualization_export` | `Framebuffer` → PPM (no OpenGL) |
 
-GPU trajectory shaders and buffers live under `visualization/Renderer/Gpu/` (embedded sources). They are not shared with `realtime/`. Interactive viewer v1 draws starfield, opaque horizon disc + glow ring, solid trails with distance fall-off, and markers. CPU export retains optional `PostProcessor` bloom / cosmetic lensing; GPU bloom parity is deferred.
+GPU trajectory shaders and buffers live under `visualization/Renderer/Gpu/` (embedded sources). They are not shared with `realtime/`. Interactive viewer v1 draws starfield, opaque horizon disc (+ optional glow / photon-sphere visuals via scene flags), solid trails with distance fall-off, and markers. CPU export retains optional `PostProcessor` bloom / cosmetic lensing; GPU bloom parity is deferred.
 
 `auto_frame` distances the camera from scene extent and uses a tilted yaw/pitch (not edge-on to equatorial orbits). Playback scrub in the viewer advances at a time-based rate (~8% of duration per second while Left/Right are held).
 
@@ -194,7 +197,7 @@ Internal unit tests: `-DPENROSE_BUILD_TESTS=ON` (default **OFF**).
 ## 6. GPU realtime stack
 
 ```text
-Engine → ShaderManager → RenderPass pipeline → GLSL fragment ray march → framebuffer
+Engine → ShaderManager → RenderPass pipeline → GLSL compute ray march → image → blit
                 ↘ FrameCapture (P key) → imagesequence/<timestamp>/
 ```
 
@@ -203,19 +206,23 @@ Owned under `realtime/`. Independent build target `Penrose`.
 | Area | Location |
 |------|----------|
 | Engine / window / capture | `realtime/core/` |
-| ShaderManager (metric loading, caching, switching) | `realtime/core/ShaderManager.h/.cpp` |
+| ShaderManager (compute load, include resolve, cache) | `realtime/core/ShaderManager.h/.cpp` |
 | RenderPass pipeline (GeodesicPass, UpscalePass) | `realtime/render/` |
-| Renderer (fullscreen quad, particle SSBO) | `realtime/render/Renderer.h/.cpp` |
+| Renderer (compute output texture, particle SSBO, blit) | `realtime/render/Renderer.h/.cpp` |
 | Camera / particles / ParticleSystem interface | `realtime/scene/` |
 | Spacetime FX helpers (LutBaker, AccretionDisk) | `realtime/spacetime/` |
 | Shaders / resources | `realtime/shaders/`, `realtime/resources/` |
 | PPM → video script | `realtime/visualization/ppm_to_video.py` |
 
-**RenderPass pipeline:** Engine holds `vector<unique_ptr<RenderPass>>`. Each pass receives a `PassContext` (camera, time, dimensions, textures) and executes independently. `GeodesicPass` handles the fullscreen quad draw with the active metric shader. `UpscalePass` is a placeholder for future foveated rendering.
+**Default metric:** `realtime/shaders/reduced.comp` includes `metrics/kerr_full.glsl` + `common/march_full.glsl`. Schwarzschild full / reduced paths remain as commented includes. Kerr `rs` / `a` are hardcoded in the GLSL file.
 
-**ShaderManager:** Manages metric shader registration, lazy compilation, caching, and runtime switching. Metrics are registered via `loadMetric(type, vertPath, fragPath)` and switched via `setMetric(type)`.
+**RenderPass pipeline:** Engine holds `vector<unique_ptr<RenderPass>>`. Each pass receives a `PassContext` and executes independently. `GeodesicPass` dispatches the compute shader; `UpscalePass` presents the result (placeholder for future foveation).
 
-**ParticleSystem:** Polymorphic interface implemented by `FallingParticleSystem` (set `rs` via `setRs()`) and `AccretionDisk` (returns `Particle` directly). Engine iterates all systems to merge particles into a single SSBO.
+**ShaderManager:** Loads compute shaders via `loadMetricCompute(type, path)`, recursively resolving `#include`. C++ currently exposes only `MetricType::SCHWARZSCHILD_REDUCED`; Kerr is selected by the includes inside `reduced.comp`, not by a separate `MetricType`.
+
+**LutBaker:** Still bakes a Schwarzschild predictive LUT at startup. The active **full** march path does not sample it (`march_reduced.glsl` does).
+
+**ParticleSystem:** Polymorphic interface implemented by `FallingParticleSystem` and `AccretionDisk`. Engine merges systems into one SSBO.
 
 Docs: [`frame_capture/`](frame_capture/).
 
@@ -264,14 +271,17 @@ penrose/
 
 ---
 
-## 9. Extensibility sketch (future Kerr)
+## 9. Extensibility sketch (next metrics)
 
-1. Implement `Spacetime::KerrMetric : Metric`.
-2. Add `KerrParameters { mass, spin }`.
-3. Add `run_simulation(config, KerrParameters, BoundOrbitInitialConditions)` (and IC recipes as needed).
-4. In `run/*/main.cpp`, set `config.spacetime = Kerr` and construct `KerrParameters` on each `SimulationRequest`.
+Kerr is already wired as a first-class CPU swap next to Schwarzschild:
 
-No structural change to viewer, export, or benchmark executables.
+1. `MetricKind::Kerr` / `CoordinateChartKind::KerrBoyerLindquist`
+2. `KerrParameters` + `KerrMetric` + IC builders + observables
+3. `SimulationRequest::metric` as `std::variant<SchwarzschildParameters, KerrParameters>`
+4. Benchmark overloads writing `*_kerr.csv` / `null_kerr_b_*.csv`
+5. Analysis loaders discover Kerr or Schwarzschild CSVs by filename
+
+To add another spacetime, follow the same additive pattern — new parameter POD, metric class, IC builders, pipeline overloads, CMake sources, and analysis filename candidates — without growing `SimulationConfig` into a kitchen sink.
 
 ---
 
@@ -284,5 +294,6 @@ No structural change to viewer, export, or benchmark executables.
 | [`VISUALIZATION_GUIDE.md`](VISUALIZATION_GUIDE.md) | **Current** — trajectory viz UX |
 | [`frame_capture/`](frame_capture/) | **Current** — GPU ray-march capture |
 | [`../visualization/README.md`](../visualization/README.md) | **Current** — visualization module |
-| [`reports/Penrose_from_First_Principles.md`](reports/Penrose_from_First_Principles.md) | Science walkthrough (layout assumptions may be dated) |
-| [`reviews/`](reviews/) | **Historical** reviews (not normative) |
+| [`../AGENTS.md`](../AGENTS.md) | **Current** — contributor / agent conventions |
+| [`reports/Penrose_from_First_Principles.md`](reports/Penrose_from_First_Principles.md) | Science walkthrough (layout / shader assumptions may be dated; see banner) |
+| [`reviews/`](reviews/) | **Historical** reviews (not normative; see reviews README for 2026-07 status) |

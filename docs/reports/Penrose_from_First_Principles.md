@@ -1,9 +1,10 @@
 # Penrose from First Principles
 
 > **Note (documentation status):** This is a long-form science and implementation walkthrough.
-> Mathematical explanations remain useful. Directory and executable layout assumptions may be
-> dated relative to the current tree (`run/`, `realtime/core`, dual Stage 3 trajectory backends:
-> GPU viewer + CPU export, `physics/analysis/`).
+> Mathematical explanations remain useful. Directory, executable, and shader-layout assumptions may be
+> dated relative to the current tree (`run/`, `realtime/core`, compute-shader assembly via
+> `reduced.comp` with Kerr default `kerr_full.glsl`, dual Stage 3 trajectory backends:
+> GPU viewer + CPU export, `physics/analysis/`, CPU Kerr scaffolding not yet pipeline-wired).
 > For current architecture and workflows, see [`../ARCHITECTURE.md`](../ARCHITECTURE.md),
 > [`../RUNNING.md`](../RUNNING.md), and [`../VISUALIZATION_GUIDE.md`](../VISUALIZATION_GUIDE.md).
 
@@ -11,13 +12,14 @@ This document explains the Penrose repository from the ground
 up. It is not a critique, redesign, or optimization plan. Its purpose is
 to make the existing mathematics and code understandable.
 
-Penrose renders a Schwarzschild black hole. In the live application, the
-actual light-bending calculation happens in `shaders/quad.frag`, once
-per screen pixel, on the GPU. The C++ code creates the window, camera,
-full-screen quad, skybox texture, particle buffer, and frame capture
-system. The repository also contains a CPU physics engine and benchmark
-programs that implement the same geodesic machinery in Eigen, but those
-files are not linked into the main `Penrose` executable by the current
+Penrose's live GPU application ray-marches null geodesics in a compute shader
+assembled from modular GLSL under `realtime/shaders/` (entry `reduced.comp`;
+default metric `metrics/kerr_full.glsl`). Older passages below that refer to
+`shaders/quad.frag` or Schwarzschild-only realtime rendering describe an earlier
+layout. The C++ code creates the window, camera, compute output texture, skybox
+texture, particle buffer, and frame capture system. The repository also contains
+a CPU physics engine and benchmark programs that implement geodesic machinery in
+Eigen; those files are not linked into the main `Penrose` executable by
 `CMakeLists.txt`.
 
 Throughout this document:

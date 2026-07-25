@@ -20,8 +20,33 @@ from .config import (
     ORBITAL_VPH,
     ORBITAL_VR,
     RS,
+    kerr_critical_impact_parameter,
+    kerr_outer_horizon,
 )
-from .loaders import load_all_null_geodesics, load_freefall, load_orbital
+from .loaders import is_kerr_run, load_all_null_geodesics, load_freefall, load_orbital
+
+
+def _run_horizon(df: pd.DataFrame | None = None, data_dir: Path | None = None) -> float:
+    spacetime = None
+    if df is not None:
+        spacetime = df.attrs.get("spacetime")
+    if spacetime is None and data_dir is not None:
+        spacetime = "kerr" if is_kerr_run(data_dir) else "schwarzschild"
+    if spacetime == "kerr":
+        return kerr_outer_horizon()
+    return RS
+
+
+def _run_b_crit(df: pd.DataFrame | None = None, data_dir: Path | None = None) -> float:
+    spacetime = None
+    if df is not None:
+        spacetime = df.attrs.get("spacetime")
+    if spacetime is None and data_dir is not None:
+        spacetime = "kerr" if is_kerr_run(data_dir) else "schwarzschild"
+    if spacetime == "kerr":
+        return kerr_critical_impact_parameter()
+    return B_CRIT
+
 
 
 def analytical_freefall_time(r0: float, rs: float = RS) -> float:
@@ -129,8 +154,22 @@ def compute_freefall_metrics(
     if df is None:
         df = load_freefall()
 
-    tau_analytical = analytical_freefall_time(r0, rs)
-    crossed = df[df["r"] <= rs]
+    horizon = _run_horizon(df)
+    spacetime = df.attrs.get("spacetime", "schwarzschild")
+    if spacetime == "kerr":
+        tau_analytical = float("nan")
+        ic_note = (
+            "Kerr radial freefall; Schwarzschild analytic tau does not apply. "
+            "Horizon check uses outer horizon r_+."
+        )
+    else:
+        tau_analytical = analytical_freefall_time(r0, rs)
+        ic_note = (
+            "Initial conditions are E=1 radial infall (vt=1/f, vr=-sqrt(rs/r0)), "
+            "not a particle released from local rest at r0."
+        )
+
+    crossed = df[df["r"] <= horizon]
     if crossed.empty:
         last = df.iloc[-1]
         tau_num = float(last["tau"])
@@ -140,18 +179,41 @@ def compute_freefall_metrics(
         row = crossed.iloc[0]
         tau_num = float(row["tau"])
         step = int(row.name)
-        # Exclude horizon and interior samples for metric invariants (f singular at r<=rs).
         valid = df.iloc[:step]
-        valid = valid[valid["r"] > rs * 1.01]
+        valid = valid[valid["r"] > horizon * 1.01]
         if valid.empty:
             valid = df.iloc[:step]
 
-    f = schwarzschild_f(valid["r"].to_numpy(), rs)
-    norm = -f * valid["vt"].to_numpy() ** 2 + (1.0 / f) * valid["vr"].to_numpy() ** 2
-    energy = f * valid["vt"].to_numpy()
-
-    abs_err = abs(tau_num - tau_analytical)
-    rel_err = 100.0 * abs_err / tau_analytical if tau_analytical else float("nan")
+    if spacetime == "kerr":
+        # Approximate invariants via CSV kinematics only (no full Kerr metric in Python here).
+        norm = np.full(len(valid), float("nan"))
+        energy = np.full(len(valid), float("nan"))
+        if "vt" in valid and len(valid):
+            energy = valid["vt"].to_numpy()  # placeholder scale; drift still informative vs const
+        abs_err = float("nan")
+        rel_err = float("nan")
+        norm_min = float("nan")
+        norm_max = float("nan")
+        norm_drift = float("nan")
+        energy_min = float(np.nanmin(energy)) if len(energy) else float("nan")
+        energy_max = float(np.nanmax(energy)) if len(energy) else float("nan")
+        energy_drift = (
+            float(energy_max - energy_min)
+            if np.isfinite(energy_min) and np.isfinite(energy_max)
+            else float("nan")
+        )
+    else:
+        f = schwarzschild_f(valid["r"].to_numpy(), rs)
+        norm = -f * valid["vt"].to_numpy() ** 2 + (1.0 / f) * valid["vr"].to_numpy() ** 2
+        energy = f * valid["vt"].to_numpy()
+        abs_err = abs(tau_num - tau_analytical)
+        rel_err = 100.0 * abs_err / tau_analytical if tau_analytical else float("nan")
+        norm_min = float(norm.min())
+        norm_max = float(norm.max())
+        norm_drift = float(norm.max() - norm.min())
+        energy_min = float(energy.min())
+        energy_max = float(energy.max())
+        energy_drift = float(energy.max() - energy.min())
 
     return FreefallMetrics(
         r0=r0,
@@ -163,16 +225,13 @@ def compute_freefall_metrics(
         crossing_abs_error=abs_err,
         crossing_rel_error_pct=rel_err,
         radius_monotonic_decreasing=bool((valid["r"].diff().dropna() <= 0).all()),
-        norm_min=float(norm.min()),
-        norm_max=float(norm.max()),
-        norm_drift=float(norm.max() - norm.min()),
-        energy_min=float(energy.min()),
-        energy_max=float(energy.max()),
-        energy_drift=float(energy.max() - energy.min()),
-        ic_note=(
-            "Initial conditions are E=1 radial infall (vt=1/f, vr=-sqrt(rs/r0)), "
-            "not a particle released from local rest at r0."
-        ),
+        norm_min=norm_min,
+        norm_max=norm_max,
+        norm_drift=norm_drift,
+        energy_min=energy_min,
+        energy_max=energy_max,
+        energy_drift=energy_drift,
+        ic_note=ic_note,
     )
 
 
@@ -185,17 +244,29 @@ def compute_orbital_metrics(
     if df is None:
         df = load_orbital()
 
+    horizon = _run_horizon(df)
+    spacetime = df.attrs.get("spacetime", "schwarzschild")
+
     r = df["r"].to_numpy()
     vr = df["vr"].to_numpy()
     vt = df["vt"].to_numpy()
     vph = df["vph"].to_numpy()
-    f = schwarzschild_f(r, rs)
 
-    energy = f * vt
-    ang_mom = r**2 * vph
-    e0, l0 = energy[0], ang_mom[0]
-    e_drift = np.abs(energy - e0)
-    l_drift = np.abs(ang_mom - l0)
+    if spacetime == "kerr":
+        # Prefer CSV norm; E/L drift from approximate Sch formulas is misleading for Kerr.
+        e_drift = np.zeros_like(r)
+        l_drift = np.zeros_like(r)
+        ic_note = "Kerr orbital run; E/L drift not recomputed in Python (see C++ console)."
+    else:
+        f = schwarzschild_f(r, rs)
+        energy = f * vt
+        ang_mom = r**2 * vph
+        e0, l0 = energy[0], ang_mom[0]
+        e_drift = np.abs(energy - e0)
+        l_drift = np.abs(ang_mom - l0)
+        ic_note = (
+            "Driver logs E and L at t=0 only; CSV records norm but not E/L drift columns."
+        )
 
     peri_idx, _ = _find_radial_extrema(r, vr)
     advance_mean = None
@@ -207,7 +278,7 @@ def compute_orbital_metrics(
             advances.append(float(dphi))
         advance_mean = float(np.mean(advances))
 
-    horizon_crossed = bool((r <= rs).any())
+    horizon_crossed = bool((r <= horizon).any())
     escaped = bool((r > 1000.0).any())
     bound = not horizon_crossed and not escaped
 
@@ -223,36 +294,34 @@ def compute_orbital_metrics(
         norm_min=float(df["norm"].min()),
         norm_max=float(df["norm"].max()),
         norm_drift=float(df["norm"].max() - df["norm"].min()),
-        energy_drift_max=float(e_drift.max()),
-        angular_momentum_drift_max=float(l_drift.max()),
+        energy_drift_max=float(e_drift.max()) if len(e_drift) else float("nan"),
+        angular_momentum_drift_max=float(l_drift.max()) if len(l_drift) else float("nan"),
         periapsis_count=len(peri_idx),
         periapsis_advance_mean=advance_mean,
         all_finite=bool(np.isfinite(r).all() and np.isfinite(vt).all()),
-        ic_note=(
-            "Driver logs E and L at t=0 only; CSV records norm but not E/L drift columns."
-        ),
+        ic_note=ic_note,
     )
 
 
 def _classify_null_run(
-    df: pd.DataFrame, impact_parameter: float, rs: float = RS
+    df: pd.DataFrame, impact_parameter: float, horizon: float, b_crit: float
 ) -> tuple[str, bool, bool]:
     r = df["r"].to_numpy()
     vr = df["vr"].to_numpy()
     if not np.all(np.isfinite(r)):
-        if impact_parameter < B_CRIT:
+        if impact_parameter < b_crit:
             return "capture (numerical breakdown)", False, True
         return "escape (numerical breakdown)", False, False
 
     r_min = float(np.nanmin(r))
     r_final = float(r[-1])
 
-    captured = r_min <= rs * 1.0001
+    captured = r_min <= horizon * 1.0001
     escaped_post = bool(r_final > 1000.0 and vr[-1] > 0)
 
     if captured:
         return "capture", False, True
-    if escaped_post or (impact_parameter > B_CRIT):
+    if escaped_post or (impact_parameter > b_crit):
         return "escape", escaped_post, False
     if r_final > 100.0 and vr[-1] > 0:
         return "escape", False, False
@@ -262,9 +331,11 @@ def _classify_null_run(
 def compute_null_run_metrics(df: pd.DataFrame, dt: float = 0.0005, rs: float = RS) -> NullRunMetrics:
     b = float(df.attrs.get("impact_parameter", float("nan")))
     source = str(df.attrs.get("source_file", "unknown"))
+    horizon = _run_horizon(df)
+    b_crit = _run_b_crit(df)
 
     r = df["r"].to_numpy()
-    outside = r > rs
+    outside = r > horizon
     h = df["H"].to_numpy()[outside]
     vt = df["vt"].to_numpy()[outside]
     vr = df["vr"].to_numpy()[outside]
@@ -276,7 +347,7 @@ def compute_null_run_metrics(df: pd.DataFrame, dt: float = 0.0005, rs: float = R
         h_err = np.abs(h) / scale
     h_err = h_err[np.isfinite(h_err)]
 
-    classification, escaped_pp, captured = _classify_null_run(df, b, rs)
+    classification, escaped_pp, captured = _classify_null_run(df, b, horizon, b_crit)
 
     deflection = None
     if classification.startswith("escape"):
@@ -310,13 +381,15 @@ def compute_null_sweep_summary(all_runs: dict[float, pd.DataFrame] | None = None
     if all_runs is None:
         all_runs = load_all_null_geodesics()
 
+    sample = next(iter(all_runs.values())) if all_runs else None
+    b_crit = _run_b_crit(sample)
+
     runs = [compute_null_run_metrics(df) for df in all_runs.values()]
     runs.sort(key=lambda m: m.impact_parameter)
 
     escape = [m.impact_parameter for m in runs if m.classification.startswith("escape")]
     capture = [m.impact_parameter for m in runs if m.classification.startswith("capture")]
 
-    # dt sweep files share b from subcritical last launch; detect by duplicate b with different lengths.
     by_b: dict[float, list[NullRunMetrics]] = {}
     for m in runs:
         by_b.setdefault(m.impact_parameter, []).append(m)
@@ -327,15 +400,14 @@ def compute_null_sweep_summary(all_runs: dict[float, pd.DataFrame] | None = None
             group.sort(key=lambda m: m.lambda_final)
 
     return NullSweepSummary(
-        b_crit=B_CRIT,
+        b_crit=b_crit,
         runs=runs,
         escape_runs=escape,
         capture_runs=capture,
         dt_sweep_runs=dt_sweep,
         dt_sweep_ic_note=(
-            "main_benchmark.cpp dt sweep reuses (vr, vph) from the last subcritical "
-            "capture launch (b = b_crit - 1e-4) and overwrites null_b_<b0>.csv where "
-            "b0 = L/E is recomputed after the null condition (typically ~b_crit + 3e-6)."
+            "Null suite launches near b_crit ± offsets. Filenames are null_b_* (Schwarzschild) "
+            "or null_kerr_b_* (Kerr)."
         ),
     )
 

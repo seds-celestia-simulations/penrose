@@ -73,8 +73,10 @@ private:
     bool use_image_starfield_ = false;
     float starfield_brightness_ = 1.0f;
     bool show_event_horizon_ = true;
+    bool show_photon_sphere_ = false;
     Color4 background_{};
     float horizon_radius_ = 1.0f;
+    float photon_sphere_radius_ = 1.5f;
 };
 
 } // namespace viz

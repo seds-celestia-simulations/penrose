@@ -53,6 +53,76 @@ void paint_absorbing_region(Framebuffer& framebuffer, const Camera& camera, floa
     }
 }
 
+void paint_horizon_glow(Framebuffer& framebuffer, const HorizonScreen& horizon) {
+    const float cx = horizon.center_x_px;
+    const float cy = horizon.center_y_px;
+    const float r = std::max(horizon.radius_px, 1.0f);
+    const float glow_outer = r * 1.85f;
+
+    const int w = framebuffer.width();
+    const int h = framebuffer.height();
+    const int min_x = std::max(0, static_cast<int>(cx - glow_outer - 1.0f));
+    const int max_x = std::min(w - 1, static_cast<int>(cx + glow_outer + 1.0f));
+    const int min_y = std::max(0, static_cast<int>(cy - glow_outer - 1.0f));
+    const int max_y = std::min(h - 1, static_cast<int>(cy + glow_outer + 1.0f));
+
+    for (int y = min_y; y <= max_y; ++y) {
+        for (int x = min_x; x <= max_x; ++x) {
+            const float x_px = static_cast<float>(x) + 0.5f;
+            const float y_px = static_cast<float>(y) + 0.5f;
+            const float dist = horizon_pixel_distance(x_px, y_px, horizon);
+            if (dist <= r || dist >= glow_outer) {
+                continue;
+            }
+            const float t = (dist - r) / std::max(1.0f, glow_outer - r);
+            const float alpha = 0.22f * std::pow(1.0f - t, 1.6f);
+            if (alpha < 0.01f) {
+                continue;
+            }
+            framebuffer.blend_pixel(x, y, Color4::from_float(0.70f, 0.58f, 0.42f, alpha), 0.999f);
+        }
+    }
+}
+
+void paint_photon_sphere_ring(Framebuffer& framebuffer, const HorizonScreen& horizon,
+                              const HorizonScreen& photon) {
+    const float horizon_px = std::max(horizon.radius_px, 1.0f);
+    const float photon_px = photon.radius_px;
+    if (photon_px <= horizon_px) {
+        return;
+    }
+
+    const float cx = horizon.center_x_px;
+    const float cy = horizon.center_y_px;
+    const float ring_half = std::max(2.0f, horizon_px * 0.035f);
+    const float outer = photon_px + ring_half;
+
+    const int w = framebuffer.width();
+    const int h = framebuffer.height();
+    const int min_x = std::max(0, static_cast<int>(cx - outer - 1.0f));
+    const int max_x = std::min(w - 1, static_cast<int>(cx + outer + 1.0f));
+    const int min_y = std::max(0, static_cast<int>(cy - outer - 1.0f));
+    const int max_y = std::min(h - 1, static_cast<int>(cy + outer + 1.0f));
+
+    for (int y = min_y; y <= max_y; ++y) {
+        for (int x = min_x; x <= max_x; ++x) {
+            const float x_px = static_cast<float>(x) + 0.5f;
+            const float y_px = static_cast<float>(y) + 0.5f;
+            const float dist = horizon_pixel_distance(x_px, y_px, horizon);
+            const float d = std::abs(dist - photon_px);
+            if (d >= ring_half) {
+                continue;
+            }
+            const float edge = 1.0f - d / ring_half;
+            const float alpha = 0.35f * edge * edge;
+            if (alpha < 0.01f) {
+                continue;
+            }
+            framebuffer.blend_pixel(x, y, Color4::from_float(0.82f, 0.78f, 0.70f, alpha), 0.999f);
+        }
+    }
+}
+
 bool outside_horizon_radius(const Vec3& position, float horizon_radius) {
     return position.length_squared() >= horizon_radius * horizon_radius;
 }
@@ -122,7 +192,13 @@ void CPURasterizer::render(Scene& scene, const Camera& camera, Framebuffer& fram
     if (scene.settings().show_event_horizon) {
         const HorizonScreen horizon =
             project_central_horizon(camera, rs, framebuffer.width(), framebuffer.height());
+        paint_horizon_glow(framebuffer, horizon);
         paint_absorbing_region(framebuffer, camera, rs, horizon);
+        if (scene.settings().show_photon_sphere) {
+            const HorizonScreen photon = project_central_horizon(
+                camera, rs * 1.5f, framebuffer.width(), framebuffer.height());
+            paint_photon_sphere_ring(framebuffer, horizon, photon);
+        }
     }
 }
 

@@ -1,5 +1,11 @@
 # Realtime Architectural Evolution Roadmap
 
+> **Status note (2026-07):** Normative architecture lives in [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
+> Since this roadmap was written, `realtime/` gained a modular compute pipeline and defaults to
+> **Kerr** via `shaders/metrics/kerr_full.glsl` (include-selected in `reduced.comp`). C++ still
+> exposes only `MetricType::SCHWARZSCHILD_REDUCED`, and `shared/` remains unused by realtime sources.
+> Treat the goals below as still-valid direction, not as a description of today’s tree.
+
 ## Executive Direction
 
 Penrose should evolve the realtime engine from a specialized Schwarzschild renderer into a backend that consumes domain descriptions from `shared/` and translates them into GPU execution. The key is not to rewrite the renderer, but to move architectural authority outward: `shared/` owns scientific vocabulary; realtime owns GPU realization.

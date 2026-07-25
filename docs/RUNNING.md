@@ -9,8 +9,8 @@ This guide covers how to install dependencies and run each Penrose pipeline:
 
 | Pipeline | Location | Executable / tool |
 |---|---|---|
-| GPU real-time ray march | `realtime/` | `Penrose` |
-| CPU scientific | `physics/` + `run/benchmark/` | `physics_benchmark` |
+| GPU real-time ray march (Kerr default) | `realtime/` | `Penrose` |
+| CPU scientific (Schwarzschild production) | `physics/` + `run/benchmark/` | `physics_benchmark` |
 | Trajectory visualization | `visualization/` + `run/viewer|export/` | `visualization_viewer` (GPU), `visualization_export` (CPU) |
 
 Architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md) · Trajectory viz UX: [`VISUALIZATION_GUIDE.md`](VISUALIZATION_GUIDE.md).
@@ -18,6 +18,12 @@ Architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md) · Trajectory viz UX: [`VISUA
 ---
 
 ## 1. Real-Time Interactive Engine
+
+The `Penrose` target runs the GPU compute ray-marcher under `realtime/`.
+
+**Default metric:** Kerr (`realtime/shaders/metrics/kerr_full.glsl`), selected by includes in `realtime/shaders/reduced.comp`. Schwarzschild full and reduced+LUT paths remain available by swapping those `#include` lines and rebuilding.
+
+There is no CLI flag or C++ `MetricType` for Kerr yet — metric choice is shader assembly.
 
 ### Prerequisites
 
@@ -97,6 +103,18 @@ cd build\Debug
 ```
 
 Depending on generator/platform, the binary may live under a configuration subdirectory such as `build/Debug/Penrose`.
+
+### Switching realtime metrics
+
+Edit `realtime/shaders/reduced.comp`:
+
+| Goal | Includes |
+|------|----------|
+| Kerr (default) | `metrics/kerr_full.glsl` + `common/march_full.glsl` |
+| Schwarzschild 4D | `metrics/schwarzschild_full.glsl` + `common/march_full.glsl` |
+| Schwarzschild reduced + LUT | `metrics/schwarzschild_reduced.glsl` + `common/march_reduced.glsl` |
+
+Kerr mass/spin are `const` values inside `kerr_full.glsl`. Rebuild `Penrose` after edits (CMake copies `shaders/` next to the binary).
 
 ### Controls
 
@@ -209,6 +227,8 @@ ffmpeg -framerate 30 -pattern_type glob \
 
 Configure the suite in [`run/benchmark/main.cpp`](../run/benchmark/main.cpp). The CMake target `physics_benchmark` runs freefall, orbital, and null-geodesic validation drivers from `physics/validation/` via `BenchmarkRunner`.
 
+Today the production path supports **Schwarzschild** and **Kerr**. Select in [`run/benchmark/main.cpp`](../run/benchmark/main.cpp) via `config.spacetime` + `config.metric` (`SchwarzschildParameters` or `KerrParameters`). Kerr writes `freefall_kerr.csv`, `orbital_kerr.csv`, `null_kerr_b_*.csv`.
+
 ### Build
 
 If you already configured the project in §1, you only need to build the benchmark target.
@@ -298,9 +318,9 @@ Export stills / sequences: `outputs/rendered_frames/<timestamp>/`.
 | Goal | Command (after configure) |
 |---|---|
 | Build GPU ray-march visualizer | `cmake --build build` (Windows: add `--config Debug`) |
-| Run GPU ray-march visualizer | `./build/Penrose` or `build\Debug\Penrose.exe` |
+| Run GPU ray-march visualizer (Kerr default) | `./build/Penrose` or `build\Debug\Penrose.exe` |
 | Build CPU benchmarks | `cmake --build build --target physics_benchmark` |
-| Run CPU benchmarks | `./build/physics_benchmark` or `build\Debug\physics_benchmark.exe` |
+| Run CPU benchmarks (Schwarzschild) | `./build/physics_benchmark` or `build\Debug\physics_benchmark.exe` |
 | Build trajectory viewer / export | `cmake --build build --target visualization_viewer visualization_export` |
 | Run trajectory viewer (GPU) | `./build/visualization_viewer` |
 | Run trajectory export (CPU) | `./build/visualization_export` |

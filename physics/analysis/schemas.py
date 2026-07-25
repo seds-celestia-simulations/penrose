@@ -8,20 +8,29 @@ from typing import Sequence
 class BenchmarkSchema:
     name: str
     required_columns: tuple[str, ...]
-    filename: str | None = None
-    filename_glob: str | None = None
+    # Preferred filenames in discovery order (first existing wins).
+    filenames: tuple[str, ...] = ()
+    filename_globs: tuple[str, ...] = ()
+
+    @property
+    def filename(self) -> str | None:
+        return self.filenames[0] if self.filenames else None
+
+    @property
+    def filename_glob(self) -> str | None:
+        return self.filename_globs[0] if self.filename_globs else None
 
 
 FREEFALL_SCHEMA = BenchmarkSchema(
     name="freefall",
     required_columns=("tau", "r", "vt", "vr"),
-    filename="freefall.csv",
+    filenames=("freefall.csv", "freefall_kerr.csv"),
 )
 
 ORBITAL_SCHEMA = BenchmarkSchema(
     name="orbital",
     required_columns=("tau", "r", "phi", "vt", "vr", "vph", "norm"),
-    filename="orbital.csv",
+    filenames=("orbital.csv", "orbital_kerr.csv"),
 )
 
 NULL_GEODESIC_SCHEMA = BenchmarkSchema(
@@ -42,7 +51,7 @@ NULL_GEODESIC_SCHEMA = BenchmarkSchema(
         "dvph",
         "phi_total",
     ),
-    filename_glob="null_b_*.csv",
+    filename_globs=("null_b_*.csv", "null_kerr_b_*.csv"),
 )
 
 

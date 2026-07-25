@@ -2,69 +2,86 @@
 
 ## What this project is
 
-A black hole visualization engine with two independent pipelines:
-- **CPU pipeline** (`physics/` + `visualization/`): scientific geodesic integration → trajectory scenes → PPM/export rendering
-- **GPU pipeline** (`realtime/`): real-time GLSL ray marching with OpenGL 4.3
+A General Relativity framework with three independent pipelines:
 
-They share only `shared/` (GR type definitions). They do NOT share code or link each other.
+- **CPU science** (`physics/`): geodesic integration, validation benchmarks, Python analysis
+- **Trajectory visualization** (`visualization/` + `run/viewer|export/`): stored trajectories → GPU polyline viewer or headless CPU PPM export
+- **GPU realtime** (`realtime/`): OpenGL 4.3 compute-shader null geodesic ray marching
+
+They share only `shared/` (GR type definitions). `physics/`, `visualization/`, and `realtime/` are peers — they do **not** link each other. Trajectory-viz GPU code (`visualization_gpu`) also does **not** include or link `realtime/`.
 
 ## Tech stack
 
 - C++20, CMake 3.22+
-- OpenGL 4.3+ (GLSL 430, GLAD loader, GLFW 3.4)
+- OpenGL 4.3+ (GLSL 430, GLAD loader, GLFW)
 - Eigen3 (CPU physics), GLM (GPU math)
 - vcpkg for Eigen3 and GLM; GLFW via FetchContent
 
-## Build (Windows)
+## Build
 
-```powershell
-cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=path\to\vcpkg.cmake
-cmake --build build --config Debug
+```bash
+cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=path/to/vcpkg.cmake
+cmake --build build
 ```
 
-Adjust `D:\dev\cpp\tools\vcpkg` to your vcpkg install path. The Penrose.exe ends up in `build/Debug/`.
+| Target | Role |
+|--------|------|
+| `Penrose` | GPU realtime ray march (`./build/Penrose`) |
+| `physics_benchmark` | CPU validation suite |
+| `visualization_viewer` | Interactive trajectory viewer |
+| `visualization_export` | Headless PPM export |
+
+On Windows multi-config generators, binaries typically land under `build/Debug/`.
 
 ## File layout
 
 ```
-shared/                  # Cross-module GR definitions (header-only, no .cpp)
-  state/GeodesicState.h  # State, Particle, Light structs (Eigen types)
+shared/                  # Cross-module GR definitions (header-only)
+  state/GeodesicState.h  # State (Eigen types)
   spacetime/Metric.h     # Abstract Spacetime::Metric interface
+  spacetime/MetricKind.h # MetricKind, CoordinateChartKind
+  metrics/               # SchwarzschildParameters, KerrParameters (POD)
   constants/             # G, c, schwarzschild_radius()
   observer/              # Observer stub
   units/                 # Placeholder for unit system
 
 physics/                 # CPU scientific pipeline
-  metrics/               # SchwarzschildMetric, CoordinateChart
+  metrics/               # SchwarzschildMetric (wired), KerrMetric (scaffolding)
   geodesics/             # GeodesicDynamics (implements DynamicsModel)
   integrators/           # RK4Integrator
-  simulation/            # TrajectorySolver, TerminationPolicy
-  validation/            # Benchmark tests (orbital, freefall, null_geodesic)
+  simulation/            # TrajectorySolver, SimulationPipeline, IC builders
+  validation/            # Benchmarks + observables
+  analysis/              # Python CSV analysis / figures / reports
 
 realtime/                # GPU real-time engine
-  core/                  # Engine, Window, Shader, ShaderManager, Texture, Framebuffer, FrameCapture
-  render/                # Renderer (fullscreen quad), RenderPass, GeodesicPass, UpscalePass
-  scene/                 # Camera, Particle, ParticleBuffer, ParticleSystem interface
-  spacetime/             # LutBaker, AccretionDisk
-  shaders/               # GLSL shaders (see shader conventions below)
-  gpu/                   # GLAD loader (glad.c, glad.h, KHR/)
+  core/                  # Engine, Window, Shader, ShaderManager, Texture, …
+  render/                # Renderer (compute image + blit), GeodesicPass, UpscalePass
+  scene/                 # Camera, Particle, ParticleBuffer, ParticleSystem
+  spacetime/             # LutBaker (Schwarzschild), AccretionDisk
+  shaders/               # Modular compute GLSL (see below)
+  gpu/                   # GLAD loader
   resources/             # Textures (starfield)
+  visualization/         # ppm_to_video.py helper
 
-visualization/           # CPU headless visualization library
-  Camera/                # viz::Camera
-  Renderer/              # CPURasterizer, Framebuffer (CPU-side, not OpenGL)
-  Scene/                 # Scene, SceneBuilder
+visualization/           # Trajectory presentation (CPU export + GPU viewer)
+  Preparation/           # StoredTrajectory, prepare_scene
   Trajectory/            # Trajectory, TrajectoryAdapter
-  Presentation/          # PresentationPipeline (CPU rendering)
-  IO/                    # PPM writer, CSV loader, output paths
-  Geometry/              # Coordinates, Mesh
-  Tests/                 # viz unit tests
+  Scene/                 # Scene, SceneBuilder, playback
+  Camera/                # viz::Camera
+  Renderer/              # CPURasterizer, GpuPolylineBackend
+  Presentation/          # VisualizationConfig, PostProcessor (CPU export)
+  Apps/                  # ViewerApp, DisplayBlit
+  IO/                    # PPM writer, output paths
+  Tests/                 # viz unit tests (optional)
 
-examples/                # Standalone examples linking physics + visualization
-  direct_integration/    # CPU integration → PPM output
-  interactive_viewer/    # CPU integration → GLFW window
+run/
+  benchmark/main.cpp     → physics_benchmark
+  viewer/main.cpp        → visualization_viewer
+  export/main.cpp        → visualization_export
+  adapter/               → SimulationResult → StoredTrajectory bridge
 
-vendor/                  # stb_image.h, Eigen (vendored copy)
+vendor/                  # stb_image.h; neutral glad for trajectory viewer
+docs/                    # ARCHITECTURE.md is the sole current architecture reference
 ```
 
 ## Critical: Module dependency rules
@@ -72,97 +89,105 @@ vendor/                  # stb_image.h, Eigen (vendored copy)
 ```
 penrose_shared (header-only)
     ↑
-    ├── physics     (links: Eigen3)
-    ├── visualization (links: Eigen3)
-    └── realtime    (links: glfw, glad, glm)
+    ├── physics         (links: Eigen3)
+    ├── visualization   (links: Eigen3; viewer also visualization_gpu + penrose_glad + glfw)
+    └── realtime        (links: glfw, glad, glm)
 ```
 
-- `physics/`, `visualization/`, `realtime/` are PEERS. They never link each other.
-- They all link `penrose_shared` for shared types.
-- `realtime/` implements its own metric-specific code (LutBaker, AccretionDisk) — it does NOT use `physics/SchwarzschildMetric`.
+- Pipelines are peers. Never create cross-module links between them.
+- `realtime/` owns its own metric GLSL — it does **not** use `physics/*Metric`.
+- Entry points configure in `run/*/main.cpp`; they should not construct concrete `*Metric` types.
 
-## When modifying code, always reference:
+## Metric status (important)
+
+| Pipeline | Schwarzschild | Kerr |
+|----------|---------------|------|
+| CPU `physics/` | Production path (wired end-to-end) | Production path (wired end-to-end; swap via `SpacetimeKind::Kerr` + `KerrParameters`) |
+| GPU `realtime/` | Available via `#include` swap in `reduced.comp` | **Default** active metric (`metrics/kerr_full.glsl` + `march_full.glsl`); spin/mass hardcoded in GLSL |
+| Trajectory viz | Chart-agnostic rendering of stored states | Accepts `KerrBoyerLindquist` (same `(t,r,θ,φ)` projection) |
+
+## When modifying code, always reference
 
 | Area | Read first |
 |------|-----------|
 | Any type that crosses modules | `shared/` headers |
-| Adding a new metric | Create `.glsl` in `realtime/shaders/metrics/`, register in `Engine::initAssets()` via `shaderManager->loadMetric()` |
+| Adding a CPU metric | `shared/metrics/`, `shared/spacetime/MetricKind.h`, `physics/metrics/`, `physics/simulation/SimulationPipeline.cpp`, IC builders, validation overloads, `CMakeLists.txt` |
+| Adding a realtime metric | Create `.glsl` under `realtime/shaders/metrics/`, wire `#include` in `realtime/shaders/reduced.comp` (and optionally extend `MetricType` / `ShaderManager`) |
 | Modifying physics solver | `physics/simulation/TrajectorySolver.h`, `physics/geodesics/GeodesicDynamics.h` |
 | Modifying GPU rendering | `realtime/render/Renderer.h`, `realtime/core/Engine.cpp`, `realtime/render/GeodesicPass.cpp` |
 | Modifying GLSL shaders | `realtime/shaders/` (see shader conventions below) |
-| Adding a new render pass | `realtime/render/RenderPass.h` (interface), create new `*Pass.h/.cpp` in `realtime/render/`, add to `Engine::passes` in `initAssets()` |
-| Adding a new metric | Create `.glsl` in `realtime/shaders/metrics/`, register in `Engine::initAssets()` via `shaderManager->loadMetric()` |
-| CPU visualization pipeline | `visualization/Presentation/PresentationPipeline.h` |
-| CMake changes | `CMakeLists.txt` (top-level) — never create cross-module links |
+| Adding a new render pass | `realtime/render/RenderPass.h`, new `*Pass` under `realtime/render/`, register in `Engine::initAssets()` |
+| CPU visualization pipeline | `visualization/Presentation/VisualizationConfig.h`, `visualization/Preparation/` |
+| CMake changes | Top-level `CMakeLists.txt` — never create cross-module links |
 
 ## Shader conventions (`realtime/shaders/`)
 
 - `#version 430 core` — GLSL 430, OpenGL 4.3 required
-- `quad.vert` — shared fullscreen quad vertex shader, used by all fragment shaders
-- Shaders are assembled at runtime by ShaderManager from modular `.glsl` files
-- Use `#include "relative/path.glsl"` in any `.glsl` file — ShaderManager resolves includes recursively with circular-dependency protection
-- Resource paths in `Engine.cpp::initAssets()` must match the CMake `POST_BUILD` copy destinations: `shaders/` and `resources/` (NOT `realtime/shaders/`)
+- Active entry is the **compute** shader `reduced.comp` (not a fragment ray march)
+- `ShaderManager` loads one compute path, recursively resolving `#include "…"` with circular-include protection
+- Screen presentation uses `common/screen.vert` + `common/screen.frag`
+- Resource paths in `Engine.cpp::initAssets()` must match CMake `POST_BUILD` copies: `shaders/` and `resources/` next to the `Penrose` binary (not `realtime/shaders/`)
 
 ### Module layout
 
 ```
 shaders/
+  reduced.comp                 # Assembly: uniforms + metric + scene + march
   common/
-    reduced_header.glsl    # #version + uniforms for reduced metric
-    quad_header.glsl       # #version + uniforms for quad metric
-    particle.glsl          # Particle struct + SSBO + intersection helpers
-    noise.glsl             # hash, valueNoise, fBm
-    skybox.glsl            # DirectionToUV, PI constant
-    disk.glsl              # accumulateDisk (disk-ray intersection)
-    reduced_main.glsl      # main() for reduced orbit ray march
-    quad_main.glsl         # raymarch() + main() for full Christoffel
+    uniforms.glsl              # Compute layout + camera/LUT uniforms
+    scene.glsl                 # Particles + volume include (disk / no_volume)
+    disk.glsl / no_volume.glsl # Accretion volume toggle
+    march_full.glsl            # 4D Boyer–Lindquist RK4 march
+    march_reduced.glsl         # Reduced-orbit + LUT path (Schwarzschild)
+    skybox.glsl, noise.glsl
+    screen.vert / screen.frag  # Blit compute image to screen
   metrics/
-    schwarzschild_reduced.glsl  # orbit ODE (includes noise, skybox, disk)
-    schwarzschild_full.glsl     # Christoffel symbols (includes skybox)
-  quad.vert
+    kerr_full.glsl             # Default in reduced.comp
+    schwarzschild_full.glsl
+    schwarzschild_reduced.glsl
 ```
 
 ### How assembly works
 
-ShaderManager concatenates: `header + metric + main`. Each file can `#include` other `.glsl` modules. Example:
+`reduced.comp` includes metric + march modules. Example (current default):
 
-- `schwarzschild_reduced.glsl` includes `../common/noise.glsl`, `../common/skybox.glsl`, `../common/disk.glsl`
-- `schwarzschild_full.glsl` includes `../common/skybox.glsl` (provides PI)
-- Headers include `particle.glsl` (Particle struct + SSBO)
+```glsl
+#include "common/uniforms.glsl"
+#include "metrics/kerr_full.glsl"
+#include "common/scene.glsl"
+#include "common/march_full.glsl"
+```
 
-Result is one GLSL string compiled via `glShaderSource`. The old assembled `reduced.frag` / `quad.frag` are kept as reference but are no longer the source of truth.
+To switch Schwarzschild reduced+LUT, comment Kerr/full and include `schwarzschild_reduced.glsl` + `march_reduced.glsl`, then rebuild (or add hot-reload). Kerr spin/mass are `const` values inside `kerr_full.glsl` (`rs = 0.25`, near-extremal `a_kerr`).
+
+`Engine` still registers `MetricType::SCHWARZSCHILD_REDUCED` and still bakes a Schwarzschild LUT; the active **full** march path does not use that LUT.
 
 ## RenderPass pipeline
 
-- `RenderPass` (interface) — `execute(PassContext&)`, `name()`
-- `GeodesicPass` — fullscreen quad draw with metric shader from ShaderManager, handles camera/LUT/skybox uniforms and particle SSBO binding
-- `UpscalePass` — placeholder for future foveated rendering
-- Engine holds `vector<unique_ptr<RenderPass>> passes`, iterates in `render()`
-- `PassContext` carries camera, time, dimensions, textures to each pass
+- `RenderPass` — `execute(PassContext&)`, `name()`
+- `GeodesicPass` — binds compute shader, textures, particle SSBO; `glDispatchCompute`
+- `UpscalePass` — presents / blits the compute image (placeholder for future foveation)
+- Engine holds `vector<unique_ptr<RenderPass>> passes`
 
 ## ParticleSystem interface
 
-- `ParticleSystem` (interface) — `update(float dt)`, `getParticles() const`
-- `FallingParticleSystem` implements `ParticleSystem` (set `rs` via `setRs()`)
-- `AccretionDisk` implements `ParticleSystem` (returns `Particle` directly)
-- Engine holds `vector<ParticleSystem*> particleSystems` for polymorphic iteration
+- `ParticleSystem` — `update(float dt)`, `getParticles() const`
+- `FallingParticleSystem`, `AccretionDisk` implement it
+- Engine merges all systems into one SSBO payload each frame
 
 ## ShaderManager
 
-- Manages metric shader loading, caching, and switching
-- `loadMetric(type, vertPath, headerPath, metricPath, mainPath)` — register a metric's shader parts
-- `setMetric(type)` — switch active metric (lazy-compile on first use)
-- `getActive()` — returns current `Shader*`
-- `reloadAll()` — recompiles all cached shaders from disk
-- `resolveIncludes(filePath, visited)` — recursively resolves `#include "path"` directives, protects against circular includes
+- `loadMetricCompute(type, computePath)` — resolve includes and compile compute shader
+- `setMetric(type)` / `getActive()` — select cached shader
+- Today only `MetricType::SCHWARZSCHILD_REDUCED` exists in C++; Kerr is selected by the `#include` inside `reduced.comp`
 
 ## C++ conventions
 
-- OpenGL objects use raw C API (no wrapper classes) — follow existing pattern
-- Realtime classes: no namespaces (global scope, like `Renderer`, `Engine`, `Camera`)
+- OpenGL objects use raw C API — follow existing pattern
+- Realtime classes: no namespaces (global `Renderer`, `Engine`, `Camera`)
 - Physics classes: namespaced (`Spacetime::`, `Dynamics::`, `Simulation::`, `Physics::`)
 - Visualization classes: `viz::` namespace
-- Header-only where possible; `.cpp` files only when there's non-trivial implementation
+- Header-only where possible; `.cpp` only for non-trivial implementation
 - No comments unless asked; keep code self-documenting
 - Use `std::make_unique` for heap-allocated objects
 - Never add a `shared/` dependency to `physics/` that pulls in GL or GLFW headers

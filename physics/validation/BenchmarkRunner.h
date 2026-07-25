@@ -1,16 +1,15 @@
 #pragma once
 
 #include "simulation/SimulationConfig.h"
-#include "metrics/parameters/SchwarzschildParameters.h"
-#include "simulation/initial_conditions/InitialConditions.h"
+#include "simulation/SimulationRequest.h"
 
 namespace Simulation {
 
 // Benchmark suite orchestration. Case-specific numbers live in nested structs
-// (and SchwarzschildParameters), not flattened onto SimulationConfig.
+// (and MetricParameters), not flattened onto SimulationConfig.
 struct BenchmarkConfig {
     SpacetimeKind spacetime = SpacetimeKind::Schwarzschild;
-    Spacetime::SchwarzschildParameters metric{};
+    MetricParameters metric = Spacetime::SchwarzschildParameters{};
 
     bool run_freefall = true;
     bool run_orbital = true;

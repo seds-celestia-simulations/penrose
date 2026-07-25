@@ -2,6 +2,7 @@
 
 #include "initial_conditions/InitialConditions.h"
 
+#include <metrics/KerrParameters.h>
 #include <metrics/SchwarzschildParameters.h>
 #include <spacetime/MetricKind.h>
 
@@ -50,7 +51,8 @@ struct SimulationConfig {
 // Metric-derived metadata carried to consumers without visualization coupling.
 struct SimulationMetadata {
     Spacetime::MetricKind metric = Spacetime::MetricKind::Schwarzschild;
-    Spacetime::CoordinateChartKind coordinate_chart = Spacetime::CoordinateChartKind::SchwarzschildSpherical;
+    Spacetime::CoordinateChartKind coordinate_chart =
+        Spacetime::CoordinateChartKind::SchwarzschildSpherical;
     double horizon_radius = 1.0;
     double photon_sphere_radius = 1.5;
 };
@@ -80,6 +82,22 @@ SimulationResult run_simulation(const SimulationConfig& config,
 
 SimulationResult run_simulation(const SimulationConfig& config,
                                 const Spacetime::SchwarzschildParameters& metric,
+                                const CustomInitialConditions& initial);
+
+SimulationResult run_simulation(const SimulationConfig& config,
+                                const Spacetime::KerrParameters& metric,
+                                const BoundOrbitInitialConditions& initial);
+
+SimulationResult run_simulation(const SimulationConfig& config,
+                                const Spacetime::KerrParameters& metric,
+                                const RadialFreefallInitialConditions& initial);
+
+SimulationResult run_simulation(const SimulationConfig& config,
+                                const Spacetime::KerrParameters& metric,
+                                const NullScatterInitialConditions& initial);
+
+SimulationResult run_simulation(const SimulationConfig& config,
+                                const Spacetime::KerrParameters& metric,
                                 const CustomInitialConditions& initial);
 
 } // namespace Simulation

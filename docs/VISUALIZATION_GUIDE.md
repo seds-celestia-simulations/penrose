@@ -46,7 +46,7 @@ Simulation::SimulationRequest orbit;
 orbit.config.spacetime = Simulation::SpacetimeKind::Schwarzschild;
 orbit.config.scenario  = Simulation::Scenario::BoundOrbit;
 orbit.config.dt = 0.01;          // physics resolution
-orbit.metric.mass = 1.0;
+orbit.metric = Spacetime::SchwarzschildParameters{.mass = 1.0};
 orbit.initial = Simulation::BoundOrbitInitialConditions{ .r0 = 6.0, .vphi = 0.06 };
 
 std::vector<Simulation::SimulationRequest> simulations = {orbit};
@@ -110,7 +110,7 @@ cmake --build build --target visualization_viewer
 
 The viewer renders prepared trajectories with `GpuPolylineBackend` (`visualization_gpu` static library): starfield, opaque horizon disc + glow ring, solid trails with distance fall-off, and markers. It does **not** run the CPU rasterizer each frame. Headless export uses `CpuRasterizerBackend` instead — see §3.
 
-`run/viewer/main.cpp` currently demonstrates **multiple independent null geodesics** overlaid in one scene.
+`run/viewer/main.cpp` currently demonstrates a **single unstable circular null geodesic** (photon-sphere orbit) in Schwarzschild spacetime. Add more particles by pushing additional `SimulationRequest` entries into the `simulations` vector.
 
 | Input | Action |
 |-------|--------|

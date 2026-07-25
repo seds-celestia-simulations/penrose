@@ -19,26 +19,53 @@ from .config import (
     PHOTON_SPHERE_R,
     RS,
     benchmark_data_dir,
+    kerr_critical_impact_parameter,
+    kerr_outer_horizon,
+    kerr_photon_sphere_radius,
 )
-from .loaders import load_all_null_geodesics, load_freefall, load_orbital
+from .loaders import is_kerr_run, load_all_null_geodesics, load_freefall, load_orbital
 from .metrics import analytical_radius_freefall, schwarzschild_f
 from .style import COLORS, apply_style, draw_horizon_circle, mark_start_end, save_figure
 
 
-def _pick_null_representatives(all_runs: dict[float, object]) -> tuple[float, float]:
-    above = sorted(b for b, df in all_runs.items() if float(df["r"].min()) > RS * 1.0001)
-    below = sorted((b for b, df in all_runs.items() if float(df["r"].min()) <= RS * 1.0001), reverse=True)
-    if not above or not below:
-        raise RuntimeError(
-            "Need at least one escape (b > b_crit) and one capture (b < b_crit) null CSV. "
-            f"Found b values: {sorted(all_runs)}"
+def _geometry(data_dir: Path | None) -> tuple[float, float, float, str]:
+    root = data_dir or benchmark_data_dir()
+    if is_kerr_run(root):
+        return (
+            kerr_outer_horizon(),
+            kerr_photon_sphere_radius(),
+            kerr_critical_impact_parameter(),
+            "kerr",
         )
-    return above[0], below[0]
+    return RS, PHOTON_SPHERE_R, B_CRIT, "schwarzschild"
+
+
+def _pick_null_representatives(
+    all_runs: dict[float, object], horizon: float
+) -> tuple[float, float, str, str]:
+    above = sorted(b for b, df in all_runs.items() if float(df["r"].min()) > horizon * 1.0001)
+    below = sorted(
+        (b for b, df in all_runs.items() if float(df["r"].min()) <= horizon * 1.0001),
+        reverse=True,
+    )
+    if above and below:
+        return above[0], below[0], "escape side", "capture side"
+
+    bs = sorted(all_runs)
+    if len(bs) < 2:
+        raise RuntimeError(
+            "Need at least two null geodesic CSVs to plot escape/capture representatives. "
+            f"Found b values: {bs}"
+        )
+    return bs[-1], bs[0], "largest b", "smallest b"
+
 
 
 def plot_orbital(out_dir: Path, data_dir: Path | None = None) -> list[tuple[str, str]]:
     apply_style()
     df = load_orbital(data_dir)
+    horizon, _, _, spacetime = _geometry(data_dir)
+    metric_label = "Kerr" if spacetime == "kerr" else "Schwarzschild"
     saved: list[tuple[str, str]] = []
 
     x = df["r"] * np.cos(df["phi"])
@@ -46,14 +73,14 @@ def plot_orbital(out_dir: Path, data_dir: Path | None = None) -> list[tuple[str,
 
     # --- Top view ---
     fig, ax = plt.subplots(figsize=(6.5, 6.5))
-    draw_horizon_circle(ax)
+    draw_horizon_circle(ax, rs=horizon, label=r"Horizon")
     ax.plot(x, y, color=COLORS["trajectory"], lw=1.2, label="Numerical orbit")
     mark_start_end(ax, x.iloc[0], y.iloc[0], x.iloc[-1], y.iloc[-1])
     ax.set_aspect("equal")
     ax.set_xlabel(r"$x$ [$r_s$]")
     ax.set_ylabel(r"$y$ [$r_s$]")
     ax.set_title(
-        f"Orbital benchmark (equatorial plane)\n"
+        f"Orbital benchmark — {metric_label} (equatorial plane)\n"
         rf"$r_0={ORBITAL_R0}\,r_s$, $v_r={ORBITAL_VR}$, $v_\phi={ORBITAL_VPH}$, $\Delta\tau={ORBITAL_DT}$"
     )
     ax.legend(loc="upper right", framealpha=0.9)
@@ -63,7 +90,7 @@ def plot_orbital(out_dir: Path, data_dir: Path | None = None) -> list[tuple[str,
     fig, axes = plt.subplots(2, 1, figsize=(7.5, 6.5), sharex=True)
     tau = df["tau"]
     axes[0].plot(tau, df["r"], color=COLORS["trajectory"], label=r"$r(\tau)$")
-    axes[0].axhline(RS, color=COLORS["horizon"], ls="--", lw=1.0, label=r"$r_s$")
+    axes[0].axhline(horizon, color=COLORS["horizon"], ls="--", lw=1.0, label=r"horizon")
     axes[0].set_ylabel(r"$r$ [$r_s$]")
     axes[0].legend(loc="upper right")
     axes[0].set_title("Orbital radius and velocity components")
@@ -77,11 +104,6 @@ def plot_orbital(out_dir: Path, data_dir: Path | None = None) -> list[tuple[str,
 
     # --- Invariant / error panel ---
     r = df["r"].to_numpy()
-    f = schwarzschild_f(r)
-    energy = f * df["vt"].to_numpy()
-    ang_mom = (r**2) * df["vph"].to_numpy()
-    e0, l0 = energy[0], ang_mom[0]
-
     fig, axes = plt.subplots(3, 1, figsize=(7.5, 7.0), sharex=True)
     axes[0].plot(tau, df["norm"], color=COLORS["trajectory"])
     axes[0].axhline(-1.0, color=COLORS["analytic"], ls=":", lw=1.0, label=r"$g_{\mu\nu} U^\mu U^\nu = -1$")
@@ -89,10 +111,20 @@ def plot_orbital(out_dir: Path, data_dir: Path | None = None) -> list[tuple[str,
     axes[0].legend(loc="upper right")
     axes[0].set_title("Massive geodesic constraint and conserved quantities (post-hoc)")
 
-    axes[1].plot(tau, energy - e0, color=COLORS["trajectory"])
-    axes[1].set_ylabel(r"$E - E_0$")
-    axes[2].plot(tau, ang_mom - l0, color=COLORS["secondary"])
-    axes[2].set_ylabel(r"$L - L_0$")
+    if spacetime == "kerr":
+        axes[1].plot(tau, np.zeros_like(r), color=COLORS["trajectory"])
+        axes[1].set_ylabel(r"$E$ drift (n/a)")
+        axes[2].plot(tau, np.zeros_like(r), color=COLORS["secondary"])
+        axes[2].set_ylabel(r"$L$ drift (n/a)")
+    else:
+        f = schwarzschild_f(r)
+        energy = f * df["vt"].to_numpy()
+        ang_mom = (r**2) * df["vph"].to_numpy()
+        e0, l0 = energy[0], ang_mom[0]
+        axes[1].plot(tau, energy - e0, color=COLORS["trajectory"])
+        axes[1].set_ylabel(r"$E - E_0$")
+        axes[2].plot(tau, ang_mom - l0, color=COLORS["secondary"])
+        axes[2].set_ylabel(r"$L - L_0$")
     axes[2].set_xlabel(r"Proper time $\tau$ [$r_s/c$]")
     saved.append(save_figure(fig, "orbital_invariants", out_dir))
 
@@ -165,33 +197,34 @@ def plot_freefall(out_dir: Path, data_dir: Path | None = None) -> list[tuple[str
     return saved
 
 
-def _plot_null_xy(df, title: str, b: float, out_stem: str, out_dir: Path) -> tuple[str, str]:
+def _plot_null_xy(
+    df, title: str, b: float, out_stem: str, out_dir: Path, horizon: float, photon_r: float, b_crit: float
+) -> tuple[str, str]:
     x = df["r"] * np.cos(df["phi"])
     y = df["r"] * np.sin(df["phi"])
     r_min = float(df["r"].min())
 
     fig, ax = plt.subplots(figsize=(6.5, 6.5))
-    draw_horizon_circle(ax)
+    draw_horizon_circle(ax, rs=horizon, label=r"Horizon")
     theta = np.linspace(0, 2 * np.pi, 256)
     ax.plot(
-        PHOTON_SPHERE_R * np.cos(theta),
-        PHOTON_SPHERE_R * np.sin(theta),
+        photon_r * np.cos(theta),
+        photon_r * np.sin(theta),
         color=COLORS["photon_sphere"],
         ls=":",
         lw=1.0,
-        label=r"Photon sphere ($1.5\,r_s$)",
+        label=r"Photon sphere",
     )
     ax.plot(x, y, color=COLORS["trajectory"], lw=1.0, label="Null geodesic")
     mark_start_end(ax, x.iloc[0], y.iloc[0], x.iloc[-1], y.iloc[-1])
     ax.scatter([0], [0], s=20, c=COLORS["horizon"], marker="x", zorder=4)
 
-    # Closest approach marker.
     idx_min = int(df["r"].idxmin())
     ax.scatter([x.iloc[idx_min]], [y.iloc[idx_min]], s=36, c=COLORS["analytic"], marker="*",
                zorder=5, label=rf"Closest approach $r_{{min}}={r_min:.3f}\,r_s$")
 
     ax.annotate(
-        rf"$b={b:.6f}\,r_s$" + "\n" + rf"$b_{{crit}}={B_CRIT:.6f}\,r_s$",
+        rf"$b={b:.6f}\,r_s$" + "\n" + rf"$b_{{crit}}={b_crit:.6f}\,r_s$",
         xy=(0.02, 0.98),
         xycoords="axes fraction",
         va="top",
@@ -199,7 +232,7 @@ def _plot_null_xy(df, title: str, b: float, out_stem: str, out_dir: Path) -> tup
         bbox=dict(boxstyle="round", fc="white", alpha=0.85),
     )
 
-    if title.lower().startswith("escape"):
+    if "escape" in title.lower():
         bend = float(np.degrees(df["phi_total"].iloc[-1]))
         ax.annotate(
             rf"$\Delta\phi_{{tot}}\approx{bend:.1f}^\circ$",
@@ -218,13 +251,14 @@ def _plot_null_xy(df, title: str, b: float, out_stem: str, out_dir: Path) -> tup
     return save_figure(fig, out_stem, out_dir)
 
 
-def _plot_null_radius_velocity(df, stem: str, b: float, out_dir: Path) -> tuple[str, str]:
+def _plot_null_radius_velocity(
+    df, stem: str, b: float, out_dir: Path, horizon: float, photon_r: float
+) -> tuple[str, str]:
     lam = df["lambda"]
     fig, axes = plt.subplots(2, 1, figsize=(7.5, 6.0), sharex=True)
     axes[0].plot(lam, df["r"], color=COLORS["trajectory"])
-    axes[0].axhline(RS, color=COLORS["horizon"], ls="--", lw=1.0, label=r"$r_s$")
-    axes[0].axhline(PHOTON_SPHERE_R, color=COLORS["photon_sphere"], ls=":", lw=1.0,
-                    label=r"$1.5\,r_s$")
+    axes[0].axhline(horizon, color=COLORS["horizon"], ls="--", lw=1.0, label=r"horizon")
+    axes[0].axhline(photon_r, color=COLORS["photon_sphere"], ls=":", lw=1.0, label=r"photon sphere")
     axes[0].set_ylabel(r"$r$ [$r_s$]")
     axes[0].legend(loc="upper right")
     axes[0].set_title(rf"Null geodesic ($b={b:.6f}\,r_s$): radius and velocities")
@@ -235,6 +269,7 @@ def _plot_null_radius_velocity(df, stem: str, b: float, out_dir: Path) -> tuple[
     axes[1].set_ylabel("Velocity components")
     axes[1].legend(loc="upper right")
     return save_figure(fig, stem, out_dir)
+
 
 
 def _plot_null_constraints(df, stem: str, b: float, out_dir: Path) -> tuple[str, str]:
@@ -264,52 +299,62 @@ def _plot_null_constraints(df, stem: str, b: float, out_dir: Path) -> tuple[str,
 def plot_null_geodesic(out_dir: Path, data_dir: Path | None = None) -> list[tuple[str, str]]:
     apply_style()
     all_runs = load_all_null_geodesics(data_dir)
-    b_escape, b_capture = _pick_null_representatives(all_runs)
+    horizon, photon_r, b_crit, spacetime = _geometry(data_dir)
+    b_hi, b_lo, hi_label, lo_label = _pick_null_representatives(all_runs, horizon)
     saved: list[tuple[str, str]] = []
 
-    df_esc = all_runs[b_escape]
-    df_cap = all_runs[b_capture]
+    df_hi = all_runs[b_hi]
+    df_lo = all_runs[b_lo]
+    metric = "Kerr" if spacetime == "kerr" else "Schwarzschild"
 
     saved.append(
         _plot_null_xy(
-            df_esc,
-            rf"Null geodesic — escape side ($b > b_{{crit}}$)\n$r_0={NULL_R0}\,r_s$",
-            b_escape,
+            df_hi,
+            rf"Null geodesic — {hi_label}\n{metric}, $r_0={NULL_R0}\,r_s$",
+            b_hi,
             "null_escape_trajectory",
             out_dir,
+            horizon,
+            photon_r,
+            b_crit,
         )
     )
     saved.append(
         _plot_null_xy(
-            df_cap,
-            rf"Null geodesic — capture side ($b < b_{{crit}}$)\n$r_0={NULL_R0}\,r_s$",
-            b_capture,
+            df_lo,
+            rf"Null geodesic — {lo_label}\n{metric}, $r_0={NULL_R0}\,r_s$",
+            b_lo,
             "null_capture_trajectory",
             out_dir,
+            horizon,
+            photon_r,
+            b_crit,
         )
     )
     saved.extend(
         [
-            _plot_null_radius_velocity(df_esc, "null_escape_radius_velocity", b_escape, out_dir),
-            _plot_null_constraints(df_esc, "null_escape_constraints", b_escape, out_dir),
-            _plot_null_radius_velocity(df_cap, "null_capture_radius_velocity", b_capture, out_dir),
-            _plot_null_constraints(df_cap, "null_capture_constraints", b_capture, out_dir),
+            _plot_null_radius_velocity(
+                df_hi, "null_escape_radius_velocity", b_hi, out_dir, horizon, photon_r
+            ),
+            _plot_null_constraints(df_hi, "null_escape_constraints", b_hi, out_dir),
+            _plot_null_radius_velocity(
+                df_lo, "null_capture_radius_velocity", b_lo, out_dir, horizon, photon_r
+            ),
+            _plot_null_constraints(df_lo, "null_capture_constraints", b_lo, out_dir),
         ]
     )
 
-    # Impact-parameter sensitivity summary.
     bs = sorted(all_runs)
     r_mins = [float(all_runs[b]["r"].min()) for b in bs]
     fig, ax = plt.subplots(figsize=(7.0, 4.5))
-    colors = [COLORS["escape"] if b > B_CRIT else COLORS["capture"] for b in bs]
+    colors = [COLORS["escape"] if b > b_crit else COLORS["capture"] for b in bs]
     ax.scatter(bs, r_mins, c=colors, s=36, zorder=3)
-    ax.axvline(B_CRIT, color=COLORS["horizon"], ls="--", lw=1.0, label=rf"$b_{{crit}}={B_CRIT:.4f}\,r_s$")
-    ax.axhline(RS, color=COLORS["horizon"], ls=":", lw=1.0, label=rf"$r_s$")
-    ax.axhline(PHOTON_SPHERE_R, color=COLORS["photon_sphere"], ls=":", lw=1.0,
-               label=rf"$1.5\,r_s$")
+    ax.axvline(b_crit, color=COLORS["horizon"], ls="--", lw=1.0, label=rf"$b_{{crit}}={b_crit:.4f}$")
+    ax.axhline(horizon, color=COLORS["horizon"], ls=":", lw=1.0, label=r"horizon")
+    ax.axhline(photon_r, color=COLORS["photon_sphere"], ls=":", lw=1.0, label=r"photon sphere")
     ax.set_xlabel(r"Impact parameter $b$ [$r_s$]")
     ax.set_ylabel(r"Closest approach $r_{min}$ [$r_s$]")
-    ax.set_title("Null geodesic impact-parameter sweep (on-disk CSVs)")
+    ax.set_title(f"{metric} null geodesic impact-parameter sweep")
     ax.legend(loc="upper right")
     saved.append(save_figure(fig, "null_impact_parameter_sweep", out_dir))
 
