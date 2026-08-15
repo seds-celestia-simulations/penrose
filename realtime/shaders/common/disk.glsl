@@ -60,8 +60,10 @@ bool accumulateVolume(vec3 currentPos, vec3 previousPos, float uTime,
             vec3 rayDir = normalize(delta + vec3(1e-8));
             float beaming = dot(plasmaVel, rayDir);
 
-            float beta = sqrt(rs / (2.0 * diskR));
-            float gamma_lorentz = 1.0 / sqrt(max(1.0 - beta * beta, 1e-6));
+            // Optimized relativistic math:
+            float betaSq = rs / (2.0 * diskR);
+            float beta = sqrt(betaSq);
+            float gamma_lorentz = 1.0 / sqrt(max(1.0 - betaSq, 1e-6));
             float dopplerFactor = 1.0 / (gamma_lorentz * (1.0 - beta * beaming));
             dopplerFactor = clamp(mix(1.0, dopplerFactor, DOPPLER_STRENGTH), 0.3, 3.0);
 

@@ -22,7 +22,7 @@
 #include "scene/ParticleBuffer.h"
 #include "core/Engine.h"
 
-Camera camera(glm::vec3(0.5f, 0.0f, 2.0f));
+Camera camera(glm::vec3(0.5f, 0.05f, 2.0f));
 float deltaTime = 0.0f; 
 float lastFrame = 0.0f; 
 bool firstMouse = true;

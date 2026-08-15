@@ -10,7 +10,9 @@ void main() {
     vec4 worldPos = uInvProjView * ndcPos;
     vec3 rd = normalize((worldPos.xyz / worldPos.w) - uCameraPos);
     vec3 ro = uCameraPos;
-
+if (abs(ro.y) < 0.001) {
+    ro.y = 0.001; 
+}
     float r0 = length(ro);
     vec3 planeNormal = cross(ro, rd);
     float planeLen = length(planeNormal);
@@ -76,49 +78,48 @@ void main() {
         float deltaPhi = bakedData.r;
         float minRadius = bakedData.g;
 
+        bool fastExit = (minRadius > DISK_OUTER + 2.0 && r0 > DISK_OUTER + 2.0);
+
+        if (r0 > DISK_OUTER + 1.0 && minRadius > DISK_OUTER + 1.0) {
+            escaped = true;
+            u = 0.0; // Force it out
+        }
+    else {
         for (int i = 0; i < 150; ++i) {
+            // Force a fixed step scaling if we are in fast-exit mode to clear the loop instantly
             float current_r = 1.0 / max(u, 1e-6);
-            float stepScale = mix(0.03, 0.15, smoothstep(DISK_OUTER + 1.0, DISK_OUTER + 5.0, current_r));
             
-            float max_dr = 0.15;
-            if (current_r > DISK_OUTER + 1.0) max_dr = 1.0;
-            else if (current_r > DISK_INNER) max_dr = 0.15;
-            else max_dr = 0.05;
-            
-            float max_dPsi = max_dr * u * u / max(abs(v), 1e-6);
+            // Branchless step sizing
+            float stepScale = (current_r > DISK_OUTER) ? 0.2 : 0.04;
+            float max_dPsi = stepScale * u * u / max(abs(v), 1e-6);
             float dPsi = min(stepScale, max_dPsi) * stepSign;
             
-            float jitter = 1.0 + (hash(vec3(float(texelCoord.x), float(texelCoord.y), float(i))) * 2.0 - 1.0) * 0.2;
-            dPsi *= jitter;
-
             orbitRK4(u, v, dPsi);
             psi += dPsi;
 
-            if (u <= 0.0) {
-                escaped = true;
-                // Prevent division by zero or negative radius later
-                u = max(u, 1e-6);
-                break;
-            }
-
-            float r = 1.0 / u;
+            float r = 1.0 / max(u, 1e-6);
+            
+            // Unified exit flags evaluated via selection instead of chaotic breaks
+            if (u <= 0.0) { escaped = true; u = max(u, 1e-6); break; }
+            if (r <= 1.5 * rs) { captured = true; break; }
+            
             vec3 currentPos = orbitPosition(r, psi, eR, eT);
-
-            intersectParticles(previousPos, currentPos, accumColor, accumAlpha);
-            if (accumulateVolume(currentPos, previousPos, uTime, accumColor, accumAlpha)) break;
-
-            if (r <= 1.5 * rs) {
-                captured = true;
-                break;
+            // Only evaluate volume if we are actually inside the disk bounds to save texture bandwidth
+            if (r >= DISK_INNER - 0.5 && r <= DISK_OUTER + 0.5) {
+                //intersectParticles(previousPos, currentPos, accumColor, accumAlpha);
+                if (accumulateVolume(currentPos, previousPos, uTime, accumColor, accumAlpha)) {
+                    break;
+                }
             }
+            
+                previousPos = currentPos;
 
-            float drdPsi = -v / max(u * u, 1e-8);
-            if (r > 25.0 && drdPsi * dPsi > 0.0) {
+            if (r > 25.0) {
                 escaped = true;
                 break;
             }
-            previousPos = currentPos;
         }
+    }
         
         // Rays that orbit the photon sphere many times may run out of iterations.
         // If they haven't escaped after 150 steps, they are virtually captured.
