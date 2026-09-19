@@ -6,15 +6,17 @@ Penrose combines a validated CPU reference solver, scientific benchmarking tools
 
 ---
 
+# Gallery
+
 ## Real-Time Kerr Rendering
 
-<img width="1920" height="675" alt="image" src="https://github.com/user-attachments/assets/09155160-bac0-4b90-a0d9-e39732910ce2" />
+![Real-time Schwarzschild rendering](docs/gallery/realtime_kerr.png)
 
 *(GPU compute ray march — default metric in `realtime/` is Kerr via `kerr_full.glsl`.)*
 
 ## Null Geodesic Evolution
 
-<img width="1559" height="864" alt="image" src="https://github.com/user-attachments/assets/eefc82a2-d28a-4da2-b755-80b33b23bd14" />
+![Null geodesic photon trajectory](docs/gallery/null_geodesic.png)
 
 ---
 
@@ -79,14 +81,11 @@ Penrose consists of three complementary pipelines.
 
 Reference implementation responsible for correctness.
 
-```text
-SimulationRequest (per particle)
-    ↓
-Metric + Dynamics + Integrator
-    ↓
-TrajectorySolver
-    ↓
-PhysicsTrajectory storage / Benchmarks / CSV
+```mermaid
+flowchart TD
+    SimulationRequest["SimulationRequest per particle"] --> MetricDynamicsIntegrator["Metric + Dynamics + Integrator"]
+    MetricDynamicsIntegrator --> TrajectorySolver
+    TrajectorySolver --> Storage["PhysicsTrajectory / Benchmarks / CSV"]
 ```
 
 ---
@@ -95,17 +94,16 @@ PhysicsTrajectory storage / Benchmarks / CSV
 
 Consumes stored trajectories; never constructs metrics or solvers.
 
-```text
-PhysicsTrajectory(s)
-      ↓
-prepare_scene          # Stage 2 (pass-through today; interpolation reserved)
-      ↓
-Scene + Camera
-      ↓
-TrajectoryRenderBackend
-  ├── GpuPolylineBackend     → interactive viewer
-  └── CpuRasterizerBackend   → headless PPM export
+```mermaid
+flowchart TD
+    PhysicsTrajectory --> prepare_scene
+    prepare_scene --> SceneCamera["Scene + Camera"]
+    SceneCamera --> TrajectoryRenderBackend
+    TrajectoryRenderBackend --> GpuPolylineBackend["GpuPolylineBackend / interactive viewer"]
+    TrajectoryRenderBackend --> CpuRasterizerBackend["CpuRasterizerBackend / headless PPM export"]
 ```
+
+Stage 2 (`prepare_scene`) is currently a pass-through; interpolation is reserved.
 
 Presentation effects are purely visual and never influence the underlying simulation. The interactive viewer and the `realtime/` ray marcher are independent OpenGL apps.
 
@@ -115,16 +113,13 @@ Presentation effects are purely visual and never influence the underlying simula
 
 Interactive visualization via compute-shader geodesic march (Kerr by default).
 
-```text
-Engine / Camera
-    ↓
-GeodesicPass (compute dispatch)
-    ↓
-Metric GLSL (kerr_full / schwarzschild_*)
-    ↓
-March loop → image → screen blit
-    ↓
-Frame (+ optional FrameCapture)
+```mermaid
+flowchart TD
+    EngineCamera["Engine / Camera"] --> GeodesicPass["GeodesicPass compute dispatch"]
+    GeodesicPass --> MetricGLSL["Metric GLSL kerr_full / schwarzschild"]
+    MetricGLSL --> March["March loop"]
+    March --> Blit["image / screen blit"]
+    Blit --> Frame["Frame + optional FrameCapture"]
 ```
 
 The CPU physics pipeline remains the scientific reference implementation.
