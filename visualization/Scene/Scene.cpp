@@ -5,7 +5,7 @@
 namespace viz {
 
 Scene::Scene(SceneSettings settings) : settings_(settings) {
-    const float rs = settings_.schwarzschild_radius;
+    const float rs = settings_.horizon_radius;
     black_hole_mesh_ = make_uv_sphere(24, 36, rs * 0.35f);
     horizon_mesh_ = make_uv_sphere(24, 36, rs);
     photon_sphere_mesh_ = make_uv_sphere(16, 24, rs * 1.5f);

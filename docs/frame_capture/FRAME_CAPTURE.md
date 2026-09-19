@@ -1,90 +1,93 @@
 # Frame Capture Feature
 
 ## Overview
-The frame capture feature allows you to record sequences of rendered frames to disk. This is useful for creating animations, debugging visualizations, or generating video sequences.
+
+The frame capture feature records sequences of GPU-rendered frames to disk. Useful for animations, debugging visualizations, or generating video sequences.
+
+This documents the **GPU ray-march** (`Penrose`) capture path. Trajectory-export PPMs go to `outputs/rendered_frames/` via `visualization_export` (CPU `CpuRasterizerBackend`) — a separate workflow from both this capture path and the interactive `visualization_viewer`.
 
 ## How to Use
 
 ### Starting and Stopping Capture
+
 - **Press the "P" key** to toggle frame capture mode:
   - **First press**: Starts capturing frames
   - **Second press**: Stops capturing frames
 
 ### Output Format
-- **Frame Format**: PPM (Portable Pixmap) format
+
+- **Frame Format**: PPM (Portable Pixmap)
 - **Naming Convention**: `frame_XXXXXX.ppm` (6-digit zero-padded numbering)
-- **Output Location**: Frames are saved in a timestamped directory structure:
-  ```
-  imagesequence/
-  ├── 2026-05-20_14-30-45/
-  │   ├── frame_000000.ppm
-  │   ├── frame_000001.ppm
-  │   ├── frame_000002.ppm
-  │   └── ...
-  └── 2026-05-20_15-22-10/
-      ├── frame_000000.ppm
-      └── ...
-  ```
+- **Output Location**: timestamped directory under `imagesequence/`:
+
+```text
+imagesequence/
+├── 2026-05-20_14-30-45/
+│   ├── frame_000000.ppm
+│   ├── frame_000001.ppm
+│   └── ...
+└── 2026-05-20_15-22-10/
+    ├── frame_000000.ppm
+    └── ...
+```
 
 ### Timestamps
-The directory name uses the format: `YYYY-MM-DD_HH-MM-SS`
 
-Each capture session creates a new timestamped directory, so multiple captures won't interfere with each other.
+Directory name format: `YYYY-MM-DD_HH-MM-SS`. Each capture session creates a new folder.
 
 ## Technical Details
 
 ### Implementation Files
-1. **`realtime/renderer/FrameCapture.h`** - Main capture class that manages:
-   - Toggle state for capture mode
-   - Timestamped directory creation
-   - Frame numbering and file path generation
 
-2. **`realtime/renderer/Renderer.cpp` (captureFrame method)** - Handles:
-   - Reading pixels from OpenGL framebuffer using `glReadPixels()`
-   - Writing PPM format files
-   - Vertical flip correction (OpenGL reads from bottom-left)
-
-3. **`realtime/renderer/Window.cpp`** - Input handling:
-   - Detects 'P' key press
-   - Toggles capture state via `toggleCapture()`
-   - Uses static key state tracking to prevent multiple toggles per frame
-
-4. **`realtime/main.cpp`** - Integration:
-   - Creates FrameCapture instance
-   - Passes it to `processInput()` 
-   - Calls `captureFrame()` after rendering each frame when capturing is enabled
+| File | Role |
+|------|------|
+| `realtime/core/FrameCapture.h` | Capture toggle, timestamped directory creation, frame path generation |
+| `realtime/core/Engine.cpp` / `Engine.h` | Owns `FrameCapture`; calls `Renderer::captureFrame` each frame while capturing |
+| `realtime/render/Renderer.cpp` | `captureFrame`: `glReadPixels`, PPM write, vertical flip |
+| `realtime/core/Window.cpp` | `processInput`: **P** key toggles capture via `toggleCapture()` |
+| `realtime/main.cpp` | Starts `Engine` (capture is owned by the engine, not `main`) |
 
 ## Console Output
-When you press 'P', you'll see console messages:
+
+When you press **P**:
+
 - **Start**: `Started capturing frames to: imagesequence/2026-05-20_14-30-45`
 - **Stop**: `Stopped capturing frames. Total frames saved: 300`
 
 ## Converting PPM to Video
-PPM files can be converted to video formats using tools like FFmpeg:
+
+Recommended helper:
 
 ```bash
-ffmpeg -framerate 30 -pattern_type glob -i 'imagesequence/2026-05-20_14-30-45/*.ppm' -c:v libx264 -pix_fmt yuv420p output.mp4
+python realtime/visualization/ppm_to_video.py
 ```
 
+Or FFmpeg directly:
+
+```bash
+ffmpeg -framerate 30 -pattern_type glob \
+  -i 'imagesequence/2026-05-20_14-30-45/*.ppm' \
+  -c:v libx264 -pix_fmt yuv420p output.mp4
+```
+
+See [PPM_TO_VIDEO_README.md](PPM_TO_VIDEO_README.md).
+
 ## Performance Notes
-- Frame capture happens every frame while recording
-- Capturing adds minimal overhead (mostly disk I/O)
-- Frame capture runs synchronously, so very fast disk writes are recommended
-- Consider using an SSD for better performance
+
+- Capture runs every rendered frame while enabled
+- Overhead is mostly disk I/O
+- Prefer an SSD for longer recordings
 
 ## File Size Estimation
-For 800x600 resolution:
+
+For 800×600 resolution:
+
 - Each PPM frame ≈ 1.4 MB
-- 30 seconds of footage ≈ 1.26 GB (at 30 fps)
-- 60 seconds of footage ≈ 2.52 GB (at 30 fps)
+- 30 seconds ≈ 1.26 GB (at 30 fps)
+- 60 seconds ≈ 2.52 GB (at 30 fps)
 
 ## Related Documentation
-- See [PPM_TO_VIDEO_README.md](PPM_TO_VIDEO_README.md) for converting captured frames to video (`realtime/visualization/ppm_to_video.py`).
 
-## Future Enhancements
-Possible improvements:
-1. Support for PNG format (with compression)
-2. Adjustable frame rate independent of render frame rate
-3. Recording pause/resume functionality
-4. Video encoding directly to MP4/WebM
-5. Selectable output directory
+- [PPM_TO_VIDEO_README.md](PPM_TO_VIDEO_README.md) — PPM → MP4 (`realtime/visualization/ppm_to_video.py`)
+- [../RUNNING.md](../RUNNING.md) — full run guide
+- [../ARCHITECTURE.md](../ARCHITECTURE.md) — current architecture

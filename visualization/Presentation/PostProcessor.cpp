@@ -71,7 +71,7 @@ Color4 PostProcessor::grade_pixel(const Color4& c, float contrast, float saturat
     return to_color(f);
 }
 
-void PostProcessor::apply(Framebuffer& framebuffer, const Camera& camera, float schwarzschild_radius,
+void PostProcessor::apply(Framebuffer& framebuffer, const Camera& camera, float horizon_radius,
                           const PresentationProfile& profile) const {
     const int width = framebuffer.width();
     const int height = framebuffer.height();
@@ -81,8 +81,8 @@ void PostProcessor::apply(Framebuffer& framebuffer, const Camera& camera, float 
 
     const float aspect = static_cast<float>(width) / static_cast<float>(height);
     const Mat4 mvp = camera.view_projection(aspect);
-    const SchwarzschildHorizonScreen horizon =
-        project_schwarzschild_horizon(camera, schwarzschild_radius, width, height);
+    const HorizonScreen horizon =
+        project_central_horizon(camera, horizon_radius, width, height);
     const float horizon_px = horizon.radius_px;
     const float halo_px = horizon_px * profile.halo_radius_scale;
     const float lens_px = horizon_px * profile.lensing_radius_scale;
@@ -162,7 +162,7 @@ void PostProcessor::apply(Framebuffer& framebuffer, const Camera& camera, float 
 
             if (dist_px <= horizon_px) {
                 const float horizon_depth =
-                    schwarzschild_horizon_clip_depth(camera, u, v, aspect, schwarzschild_radius, mvp);
+                    central_horizon_clip_depth(camera, u, v, aspect, horizon_radius, mvp);
                 const std::size_t depth_idx = static_cast<std::size_t>(y * width + x);
                 if (std::isfinite(horizon_depth) && depth_buffer[depth_idx] > horizon_depth) {
                     c = {0.0f, 0.0f, 0.0f, 1.0f};

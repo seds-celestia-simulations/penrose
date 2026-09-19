@@ -23,7 +23,7 @@ std::uint64_t checksum_framebuffer(const Framebuffer& fb) {
 } // namespace
 
 bool test_deterministic_render_checksum() {
-    Scene scene = SceneBuilder::default_schwarzschild_scene();
+    Scene scene = SceneBuilder::default_scene();
     Camera camera;
     Framebuffer fb(160, 120);
     CPURasterizer rasterizer;
@@ -36,7 +36,7 @@ bool test_deterministic_render_checksum() {
 }
 
 bool test_golden_ppm_roundtrip() {
-    Scene scene = SceneBuilder::default_schwarzschild_scene();
+    Scene scene = SceneBuilder::default_scene();
     Camera camera;
     Framebuffer fb(64, 64);
     CPURasterizer rasterizer;

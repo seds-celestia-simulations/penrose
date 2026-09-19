@@ -5,14 +5,14 @@
 
 namespace viz {
 
-Scene SceneBuilder::default_schwarzschild_scene(float rs) {
+Scene SceneBuilder::default_scene(float horizon_radius) {
     SceneSettings settings;
-    settings.schwarzschild_radius = rs;
+    settings.horizon_radius = horizon_radius;
     return Scene(settings);
 }
 
 Scene SceneBuilder::from_states(std::span<const State> states, const std::string& name) {
-    Scene scene = default_schwarzschild_scene();
+    Scene scene = default_scene();
     TrajectoryAdapterOptions options;
     options.name = name;
     scene.add_trajectory(adapt_states(states, options));
@@ -23,8 +23,8 @@ Scene SceneBuilder::from_states(const std::vector<State>& states, const std::str
     return from_states(std::span<const State>(states), name);
 }
 
-Scene SceneBuilder::from_trajectories(std::vector<Trajectory> trajectories, float rs) {
-    Scene scene = default_schwarzschild_scene(rs);
+Scene SceneBuilder::from_trajectories(std::vector<Trajectory> trajectories, float horizon_radius) {
+    Scene scene = default_scene(horizon_radius);
     for (Trajectory& traj : trajectories) {
         scene.add_trajectory(std::move(traj));
     }

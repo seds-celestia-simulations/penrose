@@ -20,6 +20,10 @@ struct TrajectoryStyle {
     Color4 gradient_end = Color4::rgb(255, 215, 100);
     float line_width = 2.5f;
     float marker_radius = 0.07f;
+    float marker_glow_scale = 2.5f;
+    float marker_brightness = 1.27f;
+    float trail_rgb_min = 0.38f;
+    float trail_alpha_min = 0.10f;
     bool show_trail = true;
     bool show_marker = true;
 };

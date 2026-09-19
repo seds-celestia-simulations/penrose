@@ -1,39 +1,35 @@
 #include "TrajectorySolver.h"
-#include <functional>
 
 namespace Simulation {
 
-    std::vector<State> TrajectorySolver::solve(
-        const State& initial_state, 
-        const Dynamics::DynamicsModel& dynamics, 
-        const TerminationPolicy& termination_policy,
-        double dt, 
-        int max_steps,
-        std::function<void(State&, int)> post_step
-    ) {
-        std::vector<State> history;
-        history.reserve(std::min(max_steps, 100000)); // Reasonable reservation
-        
-        State current = initial_state;
-        history.push_back(current);
+std::vector<State> TrajectorySolver::solve(const State& initial_state,
+                                             const Dynamics::DynamicsModel& dynamics,
+                                             const TerminationPolicy& termination_policy, double dt,
+                                             int max_steps, const Integration::Integrator& integrator,
+                                             std::function<void(State&, int)> post_step) {
+    std::vector<State> history;
+    history.reserve(std::min(max_steps, 100000));
 
-        Integration::DerivativeFunc derivative = [&dynamics](const State& s) {
-            return dynamics.compute_derivative(s);
-        };
+    State current = initial_state;
+    history.push_back(current);
 
-        for (int i = 0; i < max_steps; ++i) {
-            if (termination_policy.should_terminate(current)) {
-                break;
-            }
+    Integration::DerivativeFunc derivative = [&dynamics](const State& state) {
+        return dynamics.compute_derivative(state);
+    };
 
-            current = Integration::stepRK4(current, dt, derivative);
-            if (post_step) {
-                post_step(current, i);
-            }
-            history.push_back(current);
+    for (int i = 0; i < max_steps; ++i) {
+        if (termination_policy.should_terminate(current)) {
+            break;
         }
 
-        return history;
+        current = integrator.step(current, dt, derivative);
+        if (post_step) {
+            post_step(current, i);
+        }
+        history.push_back(current);
     }
 
+    return history;
 }
+
+} // namespace Simulation

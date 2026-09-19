@@ -2,30 +2,22 @@
 
 #include <vector>
 #include <glm/glm.hpp>
+#include "scene/ParticleSystem.h"
+#include "scene/Particle.h"
 
 namespace Physics {
 
-struct DiskParticleState {
-    glm::vec4 position; // x, y, z, and w (radius tracker)
-    glm::vec3 color;
-    float mass;
-    float radius;
-};
-
-class AccretionDisk {
+class AccretionDisk : public ParticleSystem {
 public:
     AccretionDisk(int numParticles);
 
-    // Updates the orbital physics step for all particles based on deltaTime
-    void update(float deltaTime);
-
-    // Exposes the read-only particle array to the renderer
-    const std::vector<DiskParticleState>& getParticles() const { return m_particles; }
+    void update(float deltaTime) override;
+    const std::vector<Particle>& getParticles() const override { return m_renderParticles; }
 
 private:
     int m_numParticles;
-    std::vector<DiskParticleState> m_particles;
-    std::vector<glm::vec3> m_sphericalCoords; // Internal physics tracking (r, theta, phi)
+    std::vector<glm::vec3> m_sphericalCoords;
+    std::vector<Particle> m_renderParticles;
 };
 
 } // namespace Physics

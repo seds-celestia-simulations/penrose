@@ -3,6 +3,7 @@
 #include "../Geometry/Mesh.h"
 #include "../IO/StarfieldBackground.h"
 #include "HorizonProjection.h"
+#include "StarfieldGenerator.h"
 
 #include <algorithm>
 #include <cmath>
@@ -12,23 +13,8 @@ namespace viz {
 
 namespace {
 
-std::uint32_t hash_u32(std::uint32_t x) {
-    x ^= x >> 16;
-    x *= 0x7feb352du;
-    x ^= x >> 15;
-    x *= 0x846ca68bu;
-    x ^= x >> 16;
-    return x;
-}
-
-float hash_unit(std::uint32_t seed, int i) {
-    return static_cast<float>(hash_u32(seed + static_cast<std::uint32_t>(i)) & 0xFFFFFFu) /
-           static_cast<float>(0xFFFFFFu);
-}
-
-
-void paint_absorbing_black_hole(Framebuffer& framebuffer, const Camera& camera, float rs,
-                                const SchwarzschildHorizonScreen& horizon) {
+void paint_absorbing_region(Framebuffer& framebuffer, const Camera& camera, float horizon_radius,
+                            const HorizonScreen& horizon) {
     const float cx = horizon.center_x_px;
     const float cy = horizon.center_y_px;
     const float r = horizon.radius_px;
@@ -54,7 +40,7 @@ void paint_absorbing_black_hole(Framebuffer& framebuffer, const Camera& camera, 
             const float u = x_px / static_cast<float>(w);
             const float v = y_px / static_cast<float>(h);
             const float horizon_depth =
-                schwarzschild_horizon_clip_depth(camera, u, v, aspect, rs, mvp);
+                central_horizon_clip_depth(camera, u, v, aspect, horizon_radius, mvp);
             if (!std::isfinite(horizon_depth)) {
                 continue;
             }
@@ -67,8 +53,78 @@ void paint_absorbing_black_hole(Framebuffer& framebuffer, const Camera& camera, 
     }
 }
 
-bool outside_schwarzschild_radius(const Vec3& position, float rs) {
-    return position.length_squared() >= rs * rs;
+void paint_horizon_glow(Framebuffer& framebuffer, const HorizonScreen& horizon) {
+    const float cx = horizon.center_x_px;
+    const float cy = horizon.center_y_px;
+    const float r = std::max(horizon.radius_px, 1.0f);
+    const float glow_outer = r * 1.85f;
+
+    const int w = framebuffer.width();
+    const int h = framebuffer.height();
+    const int min_x = std::max(0, static_cast<int>(cx - glow_outer - 1.0f));
+    const int max_x = std::min(w - 1, static_cast<int>(cx + glow_outer + 1.0f));
+    const int min_y = std::max(0, static_cast<int>(cy - glow_outer - 1.0f));
+    const int max_y = std::min(h - 1, static_cast<int>(cy + glow_outer + 1.0f));
+
+    for (int y = min_y; y <= max_y; ++y) {
+        for (int x = min_x; x <= max_x; ++x) {
+            const float x_px = static_cast<float>(x) + 0.5f;
+            const float y_px = static_cast<float>(y) + 0.5f;
+            const float dist = horizon_pixel_distance(x_px, y_px, horizon);
+            if (dist <= r || dist >= glow_outer) {
+                continue;
+            }
+            const float t = (dist - r) / std::max(1.0f, glow_outer - r);
+            const float alpha = 0.22f * std::pow(1.0f - t, 1.6f);
+            if (alpha < 0.01f) {
+                continue;
+            }
+            framebuffer.blend_pixel(x, y, Color4::from_float(0.70f, 0.58f, 0.42f, alpha), 0.999f);
+        }
+    }
+}
+
+void paint_photon_sphere_ring(Framebuffer& framebuffer, const HorizonScreen& horizon,
+                              const HorizonScreen& photon) {
+    const float horizon_px = std::max(horizon.radius_px, 1.0f);
+    const float photon_px = photon.radius_px;
+    if (photon_px <= horizon_px) {
+        return;
+    }
+
+    const float cx = horizon.center_x_px;
+    const float cy = horizon.center_y_px;
+    const float ring_half = std::max(2.0f, horizon_px * 0.035f);
+    const float outer = photon_px + ring_half;
+
+    const int w = framebuffer.width();
+    const int h = framebuffer.height();
+    const int min_x = std::max(0, static_cast<int>(cx - outer - 1.0f));
+    const int max_x = std::min(w - 1, static_cast<int>(cx + outer + 1.0f));
+    const int min_y = std::max(0, static_cast<int>(cy - outer - 1.0f));
+    const int max_y = std::min(h - 1, static_cast<int>(cy + outer + 1.0f));
+
+    for (int y = min_y; y <= max_y; ++y) {
+        for (int x = min_x; x <= max_x; ++x) {
+            const float x_px = static_cast<float>(x) + 0.5f;
+            const float y_px = static_cast<float>(y) + 0.5f;
+            const float dist = horizon_pixel_distance(x_px, y_px, horizon);
+            const float d = std::abs(dist - photon_px);
+            if (d >= ring_half) {
+                continue;
+            }
+            const float edge = 1.0f - d / ring_half;
+            const float alpha = 0.35f * edge * edge;
+            if (alpha < 0.01f) {
+                continue;
+            }
+            framebuffer.blend_pixel(x, y, Color4::from_float(0.82f, 0.78f, 0.70f, alpha), 0.999f);
+        }
+    }
+}
+
+bool outside_horizon_radius(const Vec3& position, float horizon_radius) {
+    return position.length_squared() >= horizon_radius * horizon_radius;
 }
 
 Color4 shade_color(const Color4& base, float ndotl, float glow) {
@@ -107,8 +163,8 @@ Color4 trajectory_segment_color(const Trajectory& traj, const TrajectoryStyle& s
         base = lerp_color(style.gradient_start, style.gradient_end, gradient_t);
     }
     const float fade = along * along;
-    const float rgb_scale = 0.38f + 0.62f * fade;
-    const float alpha_scale = 0.10f + 0.90f * fade;
+    const float rgb_scale = style.trail_rgb_min + (1.0f - style.trail_rgb_min) * fade;
+    const float alpha_scale = style.trail_alpha_min + (1.0f - style.trail_alpha_min) * fade;
     return scale_color_rgb(base, rgb_scale, alpha_scale);
 }
 
@@ -118,7 +174,7 @@ void CPURasterizer::render(Scene& scene, const Camera& camera, Framebuffer& fram
                            const RenderOptions& options) const {
     const float aspect = static_cast<float>(framebuffer.width()) / static_cast<float>(framebuffer.height());
     const Mat4 mvp = camera.view_projection(aspect);
-    const float rs = scene.settings().schwarzschild_radius;
+    const float rs = scene.settings().horizon_radius;
 
     framebuffer.clear(scene.settings().background);
 
@@ -131,12 +187,18 @@ void CPURasterizer::render(Scene& scene, const Camera& camera, Framebuffer& fram
         }
     }
 
-    draw_trajectories(scene, camera, mvp, framebuffer, rs);
+    draw_trajectories(scene, camera, mvp, framebuffer, rs, options);
 
     if (scene.settings().show_event_horizon) {
-        const SchwarzschildHorizonScreen horizon =
-            project_schwarzschild_horizon(camera, rs, framebuffer.width(), framebuffer.height());
-        paint_absorbing_black_hole(framebuffer, camera, rs, horizon);
+        const HorizonScreen horizon =
+            project_central_horizon(camera, rs, framebuffer.width(), framebuffer.height());
+        paint_horizon_glow(framebuffer, horizon);
+        paint_absorbing_region(framebuffer, camera, rs, horizon);
+        if (scene.settings().show_photon_sphere) {
+            const HorizonScreen photon = project_central_horizon(
+                camera, rs * 1.5f, framebuffer.width(), framebuffer.height());
+            paint_photon_sphere_ring(framebuffer, horizon, photon);
+        }
     }
 }
 
@@ -174,27 +236,22 @@ void CPURasterizer::draw_starfield(const Camera& camera, Framebuffer& framebuffe
     const Vec3 cam_pos = camera.position();
     const float aspect = static_cast<float>(framebuffer.width()) / static_cast<float>(framebuffer.height());
     const Mat4 mvp = camera.view_projection(aspect);
+    
+    std::vector<Star> stars = StarfieldGenerator::generate_stars(seed, star_count);
 
-    for (int i = 0; i < star_count; ++i) {
-        const float u = hash_unit(seed, i * 3 + 0);
-        const float v = hash_unit(seed, i * 3 + 1);
-        const float w = hash_unit(seed, i * 3 + 2);
+    for (const Star& star : stars) {
+        const Vec3 pos = cam_pos + star.direction * 200.0f;
 
-        const float theta = u * 3.14159265359f * 2.0f;
-        const float phi = std::acos(2.0f * v - 1.0f);
-        const Vec3 dir(std::sin(phi) * std::cos(theta), std::sin(phi) * std::sin(theta), std::cos(phi));
-        const Vec3 pos = cam_pos + dir * 200.0f;
-
-        const ProjectedVertex pv = project_vertex(pos, mvp, dir);
+        const ProjectedVertex pv = project_vertex(pos, mvp, star.direction);
         if (pv.depth <= 0.0f || pv.depth >= 1.0f) {
             continue;
         }
 
-        const float brightness = 0.35f + 0.65f * w;
-        const Color4 color = Color4::from_float(brightness, brightness, 0.75f + 0.25f * w, 1.0f);
+        const float brightness = star.brightness;
+        const Color4 color = Color4::from_float(brightness, brightness, 0.75f + 0.25f * star.w, 1.0f);
         const int cx = static_cast<int>(pv.x * framebuffer.width());
         const int cy = static_cast<int>(pv.y * framebuffer.height());
-        const int radius = w > 0.92f ? 2 : 1;
+        const int radius = star.w > 0.92f ? 2 : 1;
         for (int dy = -radius; dy <= radius; ++dy) {
             for (int dx = -radius; dx <= radius; ++dx) {
                 framebuffer.set_pixel(cx + dx, cy + dy, color, pv.depth);
@@ -404,7 +461,8 @@ void CPURasterizer::draw_glow_disc(const Vec3& center, float radius, const Mat4&
 }
 
 void CPURasterizer::draw_trajectories(Scene& scene, const Camera& camera, const Mat4& mvp,
-                                      Framebuffer& framebuffer, float schwarzschild_radius) const {
+                                      Framebuffer& framebuffer, float horizon_radius,
+                                      const RenderOptions& options) const {
     (void)camera;
     const double playback_time = scene.playback().time;
 
@@ -417,18 +475,18 @@ void CPURasterizer::draw_trajectories(Scene& scene, const Camera& camera, const 
         const TrajectoryStyle& style = traj.style();
 
         if (style.show_trail && end_idx > 0) {
-            const std::size_t stride =
-                end_idx > 1200 ? (end_idx / 1200 + 1) : 1;
-            const std::size_t full_detail_from =
-                end_idx > 200 ? end_idx - 200 : 0;
+            const std::size_t max_dense = std::max<std::size_t>(1, options.trail_max_dense_segments);
+            const std::size_t stride = end_idx > max_dense ? (end_idx / max_dense + 1) : 1;
+            const std::size_t tail = options.trail_full_detail_tail;
+            const std::size_t full_detail_from = end_idx > tail ? end_idx - tail : 0;
             for (std::size_t i = 1; i <= end_idx; ++i) {
                 if (stride > 1 && i < full_detail_from && (i % stride) != 0) {
                     continue;
                 }
                 const Vec3& a = traj.samples()[i - 1].position;
                 const Vec3& b = traj.samples()[i].position;
-                if (!outside_schwarzschild_radius(a, schwarzschild_radius) ||
-                    !outside_schwarzschild_radius(b, schwarzschild_radius)) {
+                if (!outside_horizon_radius(a, horizon_radius) ||
+                    !outside_horizon_radius(b, horizon_radius)) {
                     continue;
                 }
                 const Color4 seg_color = trajectory_segment_color(traj, style, i, end_idx);
@@ -438,7 +496,7 @@ void CPURasterizer::draw_trajectories(Scene& scene, const Camera& camera, const 
 
         if (style.show_marker) {
             const Vec3 marker_pos = traj.samples()[end_idx].position;
-            if (!outside_schwarzschild_radius(marker_pos, schwarzschild_radius)) {
+            if (!outside_horizon_radius(marker_pos, horizon_radius)) {
                 continue;
             }
             Color4 head_color = style.color;
@@ -449,9 +507,10 @@ void CPURasterizer::draw_trajectories(Scene& scene, const Camera& camera, const 
                     span > 1e-12 ? static_cast<float>((param - traj.min_parameter()) / span) : 1.0f;
                 head_color = lerp_color(style.gradient_start, style.gradient_end, gradient_t);
             }
-            Color4 marker_color = scale_color_rgb(head_color, 1.27f, 1.0f);
+            Color4 marker_color = scale_color_rgb(head_color, style.marker_brightness, 1.0f);
             marker_color.a = style.glow_color.a;
-            draw_glow_disc(marker_pos, style.marker_radius * 2.5f, mvp, framebuffer, marker_color);
+            draw_glow_disc(marker_pos, style.marker_radius * style.marker_glow_scale, mvp, framebuffer,
+                           marker_color);
         }
     }
 }

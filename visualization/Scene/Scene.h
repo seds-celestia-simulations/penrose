@@ -11,7 +11,9 @@
 namespace viz {
 
 struct SceneSettings {
-    float schwarzschild_radius = 1.0f;
+    // Geometric radius of the absorbing central region (e.g. horizon scale from the solver).
+    // Not tied to a specific metric implementation.
+    float horizon_radius = 1.0f;
     bool show_starfield = true;
     bool use_image_starfield = false;
     float starfield_brightness = 1.0f;

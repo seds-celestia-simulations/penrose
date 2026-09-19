@@ -12,9 +12,11 @@ namespace viz {
 // Presentation pipeline: deterministic rasterizer followed by optional post-processing.
 class PresentationPipeline {
 public:
+    // Callers must pass presentation/render options from VisualizationConfig (main.cpp).
+    // Defaults are inert: empty RenderOptions and disabled PresentationProfile.
     void render(Scene& scene, Camera& camera, Framebuffer& framebuffer,
                 const RenderOptions& render_options = {},
-                const PresentationProfile& profile = PresentationProfile::cinematic_default()) const;
+                const PresentationProfile& profile = {}) const;
 
 private:
     CPURasterizer rasterizer_;

@@ -10,6 +10,8 @@ struct RenderOptions {
     std::uint32_t starfield_seed = 0xC0FFEEu;
     bool deterministic = true;
     bool starfield_half_resolution = false;
+    std::size_t trail_max_dense_segments = 1200;
+    std::size_t trail_full_detail_tail = 200;
 };
 
 class CPURasterizer {
@@ -36,7 +38,7 @@ private:
     void draw_glow_disc(const Vec3& center, float radius, const Mat4& mvp, Framebuffer& framebuffer,
                         const Color4& color) const;
     void draw_trajectories(Scene& scene, const Camera& camera, const Mat4& mvp, Framebuffer& framebuffer,
-                           float schwarzschild_radius) const;
+                           float horizon_radius, const RenderOptions& options) const;
 
     ProjectedVertex project_vertex(const Vec3& v, const Mat4& mvp, const Vec3& normal) const;
     void rasterize_triangle(const ProjectedVertex& v0, const ProjectedVertex& v1, const ProjectedVertex& v2,

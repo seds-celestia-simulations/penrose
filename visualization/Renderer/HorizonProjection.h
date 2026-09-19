@@ -8,8 +8,8 @@
 
 namespace viz {
 
-// Screen-space Schwarzschild horizon (rs) aligned with the black hole at the world origin.
-struct SchwarzschildHorizonScreen {
+// Screen-space projection of a spherical absorbing region at the world origin.
+struct HorizonScreen {
     float center_u = 0.5f;
     float center_v = 0.5f;
     float center_x_px = 0.0f;
@@ -18,16 +18,16 @@ struct SchwarzschildHorizonScreen {
     float depth = 0.5f;
 };
 
-inline float horizon_pixel_distance(float x_px, float y_px, const SchwarzschildHorizonScreen& horizon) {
+inline float horizon_pixel_distance(float x_px, float y_px, const HorizonScreen& horizon) {
     const float dx = x_px - horizon.center_x_px;
     const float dy = y_px - horizon.center_y_px;
     return std::sqrt(dx * dx + dy * dy);
 }
 
-inline SchwarzschildHorizonScreen project_schwarzschild_horizon(const Camera& camera, float rs, int width,
-                                                                int height) {
-    SchwarzschildHorizonScreen out;
-    if (width <= 0 || height <= 0 || rs <= 0.0f) {
+inline HorizonScreen project_central_horizon(const Camera& camera, float horizon_radius, int width,
+                                             int height) {
+    HorizonScreen out;
+    if (width <= 0 || height <= 0 || horizon_radius <= 0.0f) {
         return out;
     }
 
@@ -51,23 +51,25 @@ inline SchwarzschildHorizonScreen project_schwarzschild_horizon(const Camera& ca
         return std::sqrt(dx * dx + dy * dy);
     };
 
-    const float rx = edge_radius_px(Vec3(rs, 0.0f, 0.0f));
-    const float ry = edge_radius_px(Vec3(0.0f, rs, 0.0f));
-    const float rz = edge_radius_px(Vec3(0.0f, 0.0f, rs));
+    const float r = horizon_radius;
+    const float rx = edge_radius_px(Vec3(r, 0.0f, 0.0f));
+    const float ry = edge_radius_px(Vec3(0.0f, r, 0.0f));
+    const float rz = edge_radius_px(Vec3(0.0f, 0.0f, r));
     out.radius_px = std::max({rx, ry, rz, 1.0f});
     return out;
 }
 
-inline float schwarzschild_horizon_clip_depth(const Camera& camera, float u, float v, float aspect, float rs,
-                                              const Mat4& mvp) {
-    if (rs <= 0.0f) {
+inline float central_horizon_clip_depth(const Camera& camera, float u, float v, float aspect,
+                                        float horizon_radius, const Mat4& mvp) {
+    if (horizon_radius <= 0.0f) {
         return std::numeric_limits<float>::infinity();
     }
 
     const Vec3 origin = camera.position();
     const Vec3 dir = camera.world_ray_direction(u, v, aspect);
     const float oc_dot_d = origin.dot(dir);
-    const float discriminant = oc_dot_d * oc_dot_d - (origin.length_squared() - rs * rs);
+    const float discriminant =
+        oc_dot_d * oc_dot_d - (origin.length_squared() - horizon_radius * horizon_radius);
     if (discriminant < 0.0f) {
         return std::numeric_limits<float>::infinity();
     }

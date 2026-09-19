@@ -1,12 +1,15 @@
 #pragma once
-#include <state/GeodesicState.h>
-#include <functional>
+
+#include "Integrator.h"
 
 namespace Integration {
 
-    // Represents the equation of motion for both position and velocity: d/dtau [X, U]
-    using DerivativeFunc = std::function<State(const State&)>;
+class RK4Integrator final : public Integrator {
+public:
+    State step(const State& state, double dt, const DerivativeFunc& derivative) const override;
+};
 
-    // Advances the state by dt using standard 4th-order Runge-Kutta
-    State stepRK4(const State& s, double dt, const DerivativeFunc& derivFunc);
-}
+// Legacy free-function entry point (delegates to RK4Integrator).
+State stepRK4(const State& state, double dt, const DerivativeFunc& derivative);
+
+} // namespace Integration

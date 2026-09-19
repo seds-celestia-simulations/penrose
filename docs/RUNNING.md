@@ -1,21 +1,29 @@
 # Running Penrose
 
-This guide covers how to install dependencies and run each Penrose instance:
+This guide covers how to install dependencies and run each Penrose pipeline:
 
-1. **GPU real-time interactive engine** (`Penrose`)
+1. **GPU real-time ray-march engine** (`Penrose`)
 2. **Frame capture** and **PPM → video** utilities
-3. **CPU physics benchmarking** (`benchmark_test`)
-
-Penrose has two independent pipelines:
+3. **CPU physics benchmarking** (`physics_benchmark`)
+4. **Trajectory viewer / export** (`visualization_viewer`, `visualization_export`)
 
 | Pipeline | Location | Executable / tool |
 |---|---|---|
-| GPU real-time | `realtime/` | `Penrose` |
-| CPU scientific | `physics/` | `benchmark_test` |
+| GPU real-time ray march (Kerr default) | `realtime/` | `Penrose` |
+| CPU scientific (Schwarzschild + Kerr) | `physics/` + `run/benchmark/` | `physics_benchmark` |
+| Trajectory visualization | `visualization/` + `run/viewer|export/` | `visualization_viewer` (GPU), `visualization_export` (CPU) |
+
+Architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md) · Trajectory viz UX: [`VISUALIZATION_GUIDE.md`](VISUALIZATION_GUIDE.md).
 
 ---
 
 ## 1. Real-Time Interactive Engine
+
+The `Penrose` target runs the GPU compute ray-marcher under `realtime/`.
+
+**Default metric:** Kerr (`realtime/shaders/metrics/kerr_full.glsl`), selected by includes in `realtime/shaders/reduced.comp`. Schwarzschild full and reduced+LUT paths remain available by swapping those `#include` lines and rebuilding.
+
+There is no CLI flag or C++ `MetricType` for Kerr yet — metric choice is shader assembly.
 
 ### Prerequisites
 
@@ -29,7 +37,7 @@ Penrose has two independent pipelines:
 
 Declared C++ dependencies (`vcpkg.json`): `glfw3`, `glad`, `glm`, `eigen3`.
 
-GLAD is built from sources under `realtime/gpu/`. GLFW is fetched by CMake if needed.
+GLAD for the GPU ray-march app is built from `realtime/gpu/`. The trajectory viewer uses a neutral copy under `vendor/glad/` (`penrose_glad` target) and must not include `realtime/`. GLFW is fetched by CMake if needed.
 
 ### Install vcpkg
 
@@ -96,6 +104,18 @@ cd build\Debug
 
 Depending on generator/platform, the binary may live under a configuration subdirectory such as `build/Debug/Penrose`.
 
+### Switching realtime metrics
+
+Edit `realtime/shaders/reduced.comp`:
+
+| Goal | Includes |
+|------|----------|
+| Kerr (default) | `metrics/kerr_full.glsl` + `common/march_full.glsl` |
+| Schwarzschild 4D | `metrics/schwarzschild_full.glsl` + `common/march_full.glsl` |
+| Schwarzschild reduced + LUT | `metrics/schwarzschild_reduced.glsl` + `common/march_reduced.glsl` |
+
+Kerr mass/spin are `const` values inside `kerr_full.glsl`. Rebuild `Penrose` after edits (CMake copies `shaders/` next to the binary).
+
 ### Controls
 
 | Input | Action |
@@ -111,7 +131,7 @@ Depending on generator/platform, the binary may live under a configuration subdi
 
 ## 2. Frame Capture and PPM → Video
 
-### Frame capture (inside the visualizer)
+### Frame capture (inside the GPU visualizer)
 
 1. Start `Penrose` (see §1).
 2. Press **P** to start capturing.
@@ -199,11 +219,15 @@ ffmpeg -framerate 30 -pattern_type glob \
   -c:v libx264 -pix_fmt yuv420p output.mp4
 ```
 
+> Trajectory-export PPMs (`outputs/rendered_frames/` from `visualization_export`) are a different tree from GPU ray-march `imagesequence/`. The helper above targets ray-march capture sessions.
+
 ---
 
 ## 3. Physics Benchmarking (CPU)
 
-The CPU scientific pipeline lives under `physics/`. The CMake target `benchmark_test` runs freefall, orbital, and null-geodesic validation drivers from `physics/validation/`.
+Configure the suite in [`run/benchmark/main.cpp`](../run/benchmark/main.cpp). The CMake target `physics_benchmark` runs freefall, orbital, and null-geodesic validation drivers from `physics/validation/` via `BenchmarkRunner`.
+
+Today both **Schwarzschild** and **Kerr** are supported. [`run/benchmark/main.cpp`](../run/benchmark/main.cpp) defaults to Kerr (`spin = 0.35`) with a commented Schwarzschild block for easy swap via `config.spacetime` + `config.metric`. Kerr writes `freefall_kerr.csv`, `orbital_kerr.csv`, `null_kerr_b_*.csv`; Schwarzschild writes `freefall.csv`, `orbital.csv`, `null_b_*.csv`.
 
 ### Build
 
@@ -213,45 +237,79 @@ If you already configured the project in §1, you only need to build the benchma
 
 ```bash
 cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=[PATH_TO_VCPKG]/scripts/buildsystems/vcpkg.cmake
-cmake --build build --target benchmark_test
+cmake --build build --target physics_benchmark
 ```
 
 **Windows:**
 
 ```powershell
 cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=[PATH_TO_VCPKG]\scripts\buildsystems\vcpkg.cmake
-cmake --build build --config Debug --target benchmark_test
+cmake --build build --config Debug --target physics_benchmark
 ```
 
-`benchmark_test` links Eigen and does not require OpenGL/GLFW for execution.
+`physics_benchmark` links Eigen and does not require OpenGL/GLFW for execution.
 
 ### Run
 
 **Linux / macOS:**
 
 ```bash
-./build/benchmark_test
+./build/physics_benchmark
 ```
 
 **Windows:**
 
 ```powershell
-.\build\Debug\benchmark_test.exe
+.\build\Debug\physics_benchmark.exe
 ```
 
 Null-geodesic cases can take several minutes.
 
 ### Outputs
 
-CSV trajectories and diagnostics are written to:
+CSV trajectories and diagnostics are written under:
 
 ```text
-physics/results/data/
+outputs/benchmark_data/<timestamp>/
 ```
 
-Examples: `freefall.csv`, `orbital.csv`, `null_b_*.csv`.
+Optional Python analysis (`physics/analysis/`; legacy shim `python -m visualization.scientific.*` still works):
 
-Analysis notebooks and plots live under `physics/analysis/`.
+```bash
+python -m physics.analysis.analyze_benchmarks
+python -m physics.analysis.plot_benchmarks
+python -m physics.analysis.generate_report
+```
+
+Notebooks / figures land under `outputs/analysis/` and `outputs/validation_figures/`.
+
+---
+
+## 4. Trajectory Viewer and Export
+
+Edit config in [`run/viewer/main.cpp`](../run/viewer/main.cpp) or [`run/export/main.cpp`](../run/export/main.cpp), then:
+
+```bash
+cmake --build build --target visualization_viewer visualization_export
+./build/visualization_viewer   # GPU polyline backend (needs display + OpenGL)
+./build/visualization_export   # CPU rasterizer backend (headless PPM)
+```
+
+Pipeline: `SimulationRequest`(s) → `run_all` → `prepare_scene_from_results` → Stage 3 backend.
+
+| Executable | Stage 3 backend | Notes |
+|------------|-----------------|-------|
+| `visualization_viewer` | `GpuPolylineBackend` (`visualization_gpu`) | Interactive; links `penrose_glad` + GLFW |
+| `visualization_export` | `CpuRasterizerBackend` | No OpenGL; writes `outputs/rendered_frames/` |
+
+Full walkthrough: [`VISUALIZATION_GUIDE.md`](VISUALIZATION_GUIDE.md).
+
+| Option | Default | Effect |
+|--------|---------|--------|
+| `PENROSE_BUILD_VIEWER` | `ON` | Build interactive GPU trajectory viewer |
+| `PENROSE_BUILD_TESTS` | `OFF` | Internal visualization unit tests |
+
+Export stills / sequences: `outputs/rendered_frames/<timestamp>/`.
 
 ---
 
@@ -259,18 +317,22 @@ Analysis notebooks and plots live under `physics/analysis/`.
 
 | Goal | Command (after configure) |
 |---|---|
-| Build GPU visualizer | `cmake --build build` (Windows: add `--config Debug`) |
-| Run GPU visualizer | `./build/Penrose` or `build\Debug\Penrose.exe` |
-| Build CPU benchmarks | `cmake --build build --target benchmark_test` |
-| Run CPU benchmarks | `./build/benchmark_test` or `build\Debug\benchmark_test.exe` |
-| PPM → video | `python realtime/visualization/ppm_to_video.py` |
+| Build GPU ray-march visualizer | `cmake --build build` (Windows: add `--config Debug`) |
+| Run GPU ray-march visualizer (Kerr default) | `./build/Penrose` or `build\Debug\Penrose.exe` |
+| Build CPU benchmarks | `cmake --build build --target physics_benchmark` |
+| Run CPU benchmarks (Kerr default) | `./build/physics_benchmark` or `build\Debug\physics_benchmark.exe` |
+| Build trajectory viewer / export | `cmake --build build --target visualization_viewer visualization_export` |
+| Run trajectory viewer (GPU) | `./build/visualization_viewer` |
+| Run trajectory export (CPU) | `./build/visualization_export` |
+| PPM → video (ray-march capture) | `python realtime/visualization/ppm_to_video.py` |
 
 ---
 
 ## Related docs
 
-- [README.md](../README.md) — project overview and short build notes
-- [docs/architecture/architecture_refactor.md](architecture/architecture_refactor.md) — architecture and pipeline structure
-- [docs/frame_capture/FRAME_CAPTURE.md](frame_capture/FRAME_CAPTURE.md) — frame capture details
-- [docs/frame_capture/PPM_TO_VIDEO_README.md](frame_capture/PPM_TO_VIDEO_README.md) — video conversion details
-- [docs/reports/PROJECT_DOCUMENTATION.md](reports/PROJECT_DOCUMENTATION.md) — technical documentation
+- [README.md](../README.md) — project overview
+- [ARCHITECTURE.md](ARCHITECTURE.md) — current architecture (sole reference)
+- [VISUALIZATION_GUIDE.md](VISUALIZATION_GUIDE.md) — trajectory visualization UX
+- [frame_capture/FRAME_CAPTURE.md](frame_capture/FRAME_CAPTURE.md) — GPU ray-march frame capture
+- [frame_capture/PPM_TO_VIDEO_README.md](frame_capture/PPM_TO_VIDEO_README.md) — PPM → video
+- [reviews/](reviews/) — historical architecture reviews

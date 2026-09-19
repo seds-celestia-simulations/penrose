@@ -15,6 +15,7 @@ public:
     bool loaded() const { return !pixels_.empty(); }
     int width() const { return width_; }
     int height() const { return height_; }
+    const std::vector<std::uint8_t>& rgb_pixels() const { return pixels_; }
 
     Color4 sample_direction(const Vec3& direction, float brightness = 1.0f) const;
 

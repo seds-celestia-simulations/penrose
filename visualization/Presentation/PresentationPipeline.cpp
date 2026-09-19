@@ -1,7 +1,5 @@
 #include "PresentationPipeline.h"
 
-#include "PresentationDefaults.h"
-
 namespace viz {
 
 void PresentationPipeline::render(Scene& scene, Camera& camera, Framebuffer& framebuffer,
@@ -9,7 +7,7 @@ void PresentationPipeline::render(Scene& scene, Camera& camera, Framebuffer& fra
                                   const PresentationProfile& profile) const {
     rasterizer_.render(scene, camera, framebuffer, render_options);
     if (profile.enabled) {
-        post_processor_.apply(framebuffer, camera, scene.settings().schwarzschild_radius, profile);
+        post_processor_.apply(framebuffer, camera, scene.settings().horizon_radius, profile);
     }
 }
 

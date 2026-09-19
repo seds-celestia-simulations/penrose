@@ -5,6 +5,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <string>
+#include <vector>
 
 #include "core/Shader.h"
 #include "scene/Camera.h"
@@ -12,17 +14,19 @@
 
 class Renderer {
 private:
-    unsigned int quadVAO, quadVBO;
+    unsigned int dummyVAO;
+    unsigned int computeOutputTexture;
     ParticleBuffer particleBuffer;
 
 public:
-    Renderer();
+    Renderer(int width, int height);
     ~Renderer();
 
-    void draw(Shader& shader, Camera& camera, unsigned int texture, float currentFrame,   
-     int renderWidth, int renderHeight, bool blackHolePass, bool highQualityPass);
-
     void updateParticles(const std::vector<Particle>& particles);
-    
+    void bindParticleBuffer(unsigned int bindingPoint);
+    size_t getParticleCount() const;
+
     bool captureFrame(const std::string& filePath, GLFWwindow* window);
+    void bindComputeImage(unsigned int unit);
+    void blitToScreen();
 };

@@ -41,6 +41,7 @@ std::vector<float> LutBaker::bakeSchwarzschildLUT(const BakerConfig& config) {
 
             float psi = 0.0f;
             bool captured = false;
+            float min_r = r_start;
             
             // Step forward until capture or escape
             for (int i = 0; i < config.maxSteps; ++i) {
@@ -50,9 +51,8 @@ std::vector<float> LutBaker::bakeSchwarzschildLUT(const BakerConfig& config) {
                 if (u <= 0.0f) { 
                     break;
                 }
-                if (u > 1.0f / (config.rs * 1.001f)) { 
-                    captured = true;
-                    break;
+                if (u > 0.0f) { // closest approach
+                    min_r = std::min(min_r, 1.0f / u);
                 }
                 if (u < 1.0f / config.rMax && v < 0.0f) {
                     break;
@@ -64,7 +64,7 @@ std::vector<float> LutBaker::bakeSchwarzschildLUT(const BakerConfig& config) {
             
             int index = (y * config.lutSize + x) * 3;
             lutData[index + 0] = deltaPhi;  // RED channel
-            lutData[index + 1] = 0.0f;     // GREEN channel placeholder
+            lutData[index + 1] = min_r;     // GREEN channel placeholder
             lutData[index + 2] = 0.0f;     // BLUE channel placeholder
         }
     }

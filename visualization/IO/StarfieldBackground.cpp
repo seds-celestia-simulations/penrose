@@ -20,7 +20,7 @@ constexpr float kPi = 3.14159265358979323846f;
 } // namespace
 
 std::filesystem::path StarfieldBackground::default_image_path() {
-    return std::filesystem::path(PENROSE_SOURCE_DIR) / "realtime/resources/starfield_original.jpg";
+    return std::filesystem::path(PENROSE_SOURCE_DIR) / "visualization/resources/starfield_original.jpg";
 }
 
 StarfieldBackground::StarfieldBackground() {

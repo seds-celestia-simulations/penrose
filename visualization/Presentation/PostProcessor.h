@@ -8,7 +8,7 @@ namespace viz {
 
 class PostProcessor {
 public:
-    void apply(Framebuffer& framebuffer, const Camera& camera, float schwarzschild_radius,
+    void apply(Framebuffer& framebuffer, const Camera& camera, float horizon_radius,
                const PresentationProfile& profile) const;
 
 private:
